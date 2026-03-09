@@ -16,11 +16,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from kernels import get_kernel
-cap = torch.cuda.get_device_capability()
-# varunneal's FA3 is Hopper only, use kernels-community on non-Hopper GPUs
-repo = "varunneal/flash-attention-3" if cap == (9, 0) else "kernels-community/flash-attn3"
-fa3 = get_kernel(repo).flash_attn_interface
+from torch.nn.attention.flex_attention import flex_attention, create_block_mask
 
 from prepare import MAX_SEQ_LEN, TIME_BUDGET, TOTAL_VOCAB_SIZE, Tokenizer, make_dataloader, evaluate_val_loss
 
@@ -72,6 +68,17 @@ class CausalSelfAttention(nn.Module):
         self.c_proj = nn.Linear(self.n_embd, self.n_embd, bias=False)
         self.ve_gate_channels = 32
         self.ve_gate = nn.Linear(self.ve_gate_channels, self.n_kv_head, bias=False) if has_ve(layer_idx, config.n_layer) else None
+        self._block_mask_cache = {}
+
+    def _get_block_mask(self, T, window, device):
+        key = (T, window)
+        if key not in self._block_mask_cache:
+            def sliding_causal(b, h, q_idx, kv_idx):
+                return (q_idx >= kv_idx) & (q_idx - kv_idx < window)
+            self._block_mask_cache[key] = create_block_mask(
+                sliding_causal, B=None, H=None, Q_LEN=T, KV_LEN=T, device=device
+            )
+        return self._block_mask_cache[key]
 
     def forward(self, x, ve, cos_sin, window_size):
         B, T, C = x.size()
@@ -89,8 +96,20 @@ class CausalSelfAttention(nn.Module):
         q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
         q, k = norm(q), norm(k)
 
-        y = fa3.flash_attn_func(q, k, v, causal=True, window_size=window_size)
-        y = y.contiguous().view(B, T, -1)
+        # Transpose to (B, H, T, D) for SDPA/FlexAttention
+        q = q.transpose(1, 2)
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
+        # Expand KV heads for GQA if needed
+        if self.n_kv_head < self.n_head:
+            rep = self.n_head // self.n_kv_head
+            k = k.repeat_interleave(rep, dim=1)
+            v = v.repeat_interleave(rep, dim=1)
+        if window_size < T:
+            y = flex_attention(q, k, v, block_mask=self._get_block_mask(T, window_size, q.device))
+        else:
+            y = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+        y = y.transpose(1, 2).contiguous().view(B, T, -1)
         y = self.c_proj(y)
         return y
 
@@ -196,12 +215,12 @@ class GPT(nn.Module):
         assert all(c in "SL" for c in pattern)
         long_window = config.sequence_len
         short_window = long_window // 2
-        char_to_window = {"L": (long_window, 0), "S": (short_window, 0)}
+        char_to_window = {"L": long_window, "S": short_window}
         window_sizes = []
         for layer_idx in range(config.n_layer):
             char = pattern[layer_idx % len(pattern)]
             window_sizes.append(char_to_window[char])
-        window_sizes[-1] = (long_window, 0)
+        window_sizes[-1] = long_window
         return window_sizes
 
     def estimate_flops(self):
@@ -214,8 +233,7 @@ class GPT(nn.Module):
         q = self.config.n_embd // self.config.n_head
         t = self.config.sequence_len
         attn_flops = 0
-        for window_size in self.window_sizes:
-            window = window_size[0]
+        for window in self.window_sizes:
             effective_seq = t if window < 0 else min(window, t)
             attn_flops += 12 * h * q * effective_seq
         return 6 * (nparams - nparams_exclude) + attn_flops
@@ -447,7 +465,7 @@ FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
 
 # Model size
 DEPTH = 8               # number of transformer layers
-DEVICE_BATCH_SIZE = 128  # per-device batch size (reduce if OOM)
+DEVICE_BATCH_SIZE = 16   # per-device batch size (reduce if OOM)
 
 # ---------------------------------------------------------------------------
 # Setup: tokenizer, model, optimizer, dataloader
