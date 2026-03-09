@@ -127,15 +127,18 @@ class MLP(nn.Module):
         return x
 
 
+DROPOUT = 0.1  # residual dropout
+
 class Block(nn.Module):
     def __init__(self, config, layer_idx):
         super().__init__()
         self.attn = CausalSelfAttention(config, layer_idx)
         self.mlp = MLP(config)
+        self.drop = nn.Dropout(DROPOUT)
 
     def forward(self, x, ve, cos_sin, window_size):
-        x = x + self.attn(norm(x), ve, cos_sin, window_size)
-        x = x + self.mlp(norm(x))
+        x = x + self.drop(self.attn(norm(x), ve, cos_sin, window_size))
+        x = x + self.drop(self.mlp(norm(x)))
         return x
 
 
