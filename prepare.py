@@ -306,8 +306,15 @@ def prepare_audio_data():
         print(f"Audio: encoding {split_name} ({len(flac_files)} files)...")
         docs = []
         total_seconds = 0
+        errors = 0
         for i, fpath in enumerate(flac_files):
-            waveform, sr = sf.read(str(fpath))
+            try:
+                waveform, sr = sf.read(str(fpath))
+            except Exception as e:
+                errors += 1
+                if errors <= 5:
+                    print(f"  Warning: skipping {fpath}: {e}")
+                continue
             waveform = torch.tensor(waveform, dtype=torch.float32)
             if sr != target_sr:
                 waveform = torchaudio.functional.resample(waveform, sr, target_sr)
@@ -323,6 +330,8 @@ def prepare_audio_data():
             total_seconds += duration
             if (i + 1) % 2000 == 0:
                 print(f"  Encoded {i+1}/{len(flac_files)} clips ({total_seconds/3600:.1f}h)")
+        if errors:
+            print(f"  Skipped {errors} files due to read errors")
         print(f"Audio {split_name}: {len(docs)} docs, {total_seconds/3600:.1f}h, "
               f"avg {sum(len(d) for d in docs)/max(len(docs),1):.0f} tokens/doc")
         return docs
@@ -330,9 +339,8 @@ def prepare_audio_data():
     ls_base = "https://www.openslr.org/resources/12"
     ls_dir = os.path.join(AUDIO_DIR, "LibriSpeech")
 
-    # Process training splits sequentially, cleaning up after each.
+    # Process training splits sequentially, cleaning up raw files after each.
     # train-clean-100 (~100h) + dev-other (~5h) + test-clean (~5h) + test-other (~5h) ≈ 115h
-    # train-clean-360 omitted due to encoding time (~2h on GPU); can be added later.
     train_splits = [
         ("train-clean-100", f"{ls_base}/train-clean-100.tar.gz"),
         ("dev-other",       f"{ls_base}/dev-other.tar.gz"),

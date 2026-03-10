@@ -1,0 +1,13 @@
+Cache directory: /root/.cache/autoresearch
+Vocab layout: text=8192, audio_special=2, SNAC=3x4096, total=20482
+
+Data: all 11 shards already downloaded at /root/.cache/autoresearch/data
+
+Tokenizer: already trained at /root/.cache/autoresearch/tokenizer
+
+
+--- Processing train-clean-100 ---
+  Downloading https://www.openslr.org/resources/12/train-clean-100.tar.gz...
+  Extracting /root/.cache/autoresearch/audio/train-clean-100.tar.gz...
+Audio: encoding train-clean-100 (28539 files)...
+  Encoded 2000/28539 clips (6.8h)
