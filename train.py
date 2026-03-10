@@ -433,7 +433,7 @@ class MuonAdamW(torch.optim.Optimizer):
                 continue
             grad = p.grad
             state = self.state[p]
-            if not state:
+            if 'step' not in state:
                 state['step'] = 0
                 state['exp_avg'] = torch.zeros_like(p)
                 state['exp_avg_sq'] = torch.zeros_like(p)
@@ -523,8 +523,8 @@ PERROW_LR = False              # H4: per-row adaptive LR for embeddings
 PERROW_LR_ALPHA = 0.3          # H4: exponent for frequency-based LR scaling
 ADADECAY_WD = False            # H5: gradient-magnitude adaptive WD (inspired by AdaDecay)
 ADADECAY_BETA = 0.99           # H5: EMA smoothing for gradient magnitudes
-MODALITY_REBALANCE = True     # H6: MILES-inspired modality utilization rebalancing
-MODALITY_REBALANCE_ALPHA = 0.8 # H6: strength of rebalancing
+MODALITY_REBALANCE = False     # H6: MILES-inspired modality utilization rebalancing
+MODALITY_REBALANCE_ALPHA = 0.5 # H6: strength of rebalancing
 
 # Model size
 DEPTH = 8               # number of transformer layers
