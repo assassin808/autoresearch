@@ -466,6 +466,7 @@ WARMUP_RATIO = 0.0      # fraction of time budget for LR warmup
 WARMDOWN_RATIO = 0.7    # fraction of time budget for LR warmdown — was 0.5
 FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
 AUDIO_LOSS_WEIGHT = 1.0  # audio loss multiplier (1.0 = equal weight)
+AUDIO_MIX_RATIO = 0.5   # fraction of batch rows that are audio (default 0.3)
 
 # Model size
 DEPTH = 8               # number of transformer layers
@@ -528,7 +529,7 @@ optimizer = model.setup_optimizer(
 
 model = torch.compile(model, dynamic=False)
 
-train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
+train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train", audio_ratio=AUDIO_MIX_RATIO)
 x, y, epoch = next(train_loader)  # prefetch first batch
 
 print(f"Time budget: {TIME_BUDGET}s")
