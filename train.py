@@ -18,7 +18,7 @@ import torch.nn.functional as F
 
 from torch.nn.attention.flex_attention import flex_attention, create_block_mask
 
-from prepare import MAX_SEQ_LEN, TIME_BUDGET, TOTAL_VOCAB_SIZE, Tokenizer, make_dataloader, evaluate_val_loss
+from prepare import MAX_SEQ_LEN, TIME_BUDGET, TOTAL_VOCAB_SIZE, AUDIO_START_ID, Tokenizer, make_dataloader, evaluate_val_loss
 
 # ---------------------------------------------------------------------------
 # GPT Model
@@ -557,15 +557,35 @@ def get_weight_decay(progress):
 
 t_start_training = time.time()
 smooth_train_loss = 0
+smooth_text_loss = 0
+smooth_audio_loss = 0
 total_training_time = 0
 step = 0
+convergence_log = []  # (step, progress, text_loss, audio_loss, total_loss)
 
 while True:
     torch.cuda.synchronize()
     t0 = time.time()
+    step_text_nats = 0.0
+    step_audio_nats = 0.0
+    step_text_count = 0
+    step_audio_count = 0
     for micro_step in range(grad_accum_steps):
+        do_track = (step % 20 == 0)
         with autocast_ctx:
-            loss = model(x, y)
+            if do_track:
+                per_token_loss = model(x, y, reduction='none')
+                # Per-modality tracking
+                with torch.no_grad():
+                    audio_mask = (y >= AUDIO_START_ID).view(-1)
+                    text_mask = ~audio_mask
+                    step_text_nats += (per_token_loss * text_mask.float()).sum().item()
+                    step_text_count += text_mask.sum().item()
+                    step_audio_nats += (per_token_loss * audio_mask.float()).sum().item()
+                    step_audio_count += audio_mask.sum().item()
+                loss = per_token_loss.mean()
+            else:
+                loss = model(x, y)
         train_loss = loss.detach()
         loss = loss / grad_accum_steps
         loss.backward()
@@ -607,7 +627,20 @@ while True:
     mfu = 100 * num_flops_per_token * TOTAL_BATCH_SIZE / dt / H100_BF16_PEAK_FLOPS
     remaining = max(0, TIME_BUDGET - total_training_time)
 
-    print(f"\rstep {step:05d} ({pct_done:.1f}%) | loss: {debiased_smooth_loss:.6f} | lrm: {lrm:.2f} | dt: {dt*1000:.0f}ms | tok/sec: {tok_per_sec:,} | mfu: {mfu:.1f}% | epoch: {epoch} | remaining: {remaining:.0f}s    ", end="", flush=True)
+    # Per-modality convergence tracking
+    if step % 20 == 0 and step_text_count > 0 and step_audio_count > 0:
+        text_l = step_text_nats / step_text_count
+        audio_l = step_audio_nats / step_audio_count
+        ema_b = 0.9
+        smooth_text_loss = ema_b * smooth_text_loss + (1 - ema_b) * text_l
+        smooth_audio_loss = ema_b * smooth_audio_loss + (1 - ema_b) * audio_l
+        n = step // 20 + 1
+        db_text = smooth_text_loss / (1 - ema_b**n)
+        db_audio = smooth_audio_loss / (1 - ema_b**n)
+        convergence_log.append((step, progress, db_text, db_audio, debiased_smooth_loss))
+        print(f"\rstep {step:05d} ({pct_done:.1f}%) | loss: {debiased_smooth_loss:.6f} | text: {db_text:.4f} | audio: {db_audio:.4f} | ratio: {db_audio/db_text:.2f} | lrm: {lrm:.2f} | remaining: {remaining:.0f}s    ", end="", flush=True)
+    else:
+        print(f"\rstep {step:05d} ({pct_done:.1f}%) | loss: {debiased_smooth_loss:.6f} | lrm: {lrm:.2f} | dt: {dt*1000:.0f}ms | tok/sec: {tok_per_sec:,} | mfu: {mfu:.1f}% | epoch: {epoch} | remaining: {remaining:.0f}s    ", end="", flush=True)
 
     # GC management (Python's GC causes ~500ms stalls)
     if step == 0:
@@ -639,6 +672,26 @@ steady_state_mfu = 100 * num_flops_per_token * TOTAL_BATCH_SIZE * (step - 10) / 
 peak_vram_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
 
 print("---")
+# Convergence analysis
+if len(convergence_log) >= 4:
+    print("convergence_analysis:")
+    # Print convergence trajectory
+    for s, p, tl, al, total in convergence_log:
+        print(f"  step={s:4d} prog={p:.3f} text={tl:.4f} audio={al:.4f} ratio={al/tl:.3f} total={total:.4f}")
+    # Compute convergence speeds: relative improvement from first quarter to last quarter
+    n = len(convergence_log)
+    q1 = convergence_log[n//4]  # 25% mark
+    q3 = convergence_log[3*n//4]  # 75% mark
+    text_speed = (q1[2] - q3[2]) / q1[2]  # fractional reduction
+    audio_speed = (q1[3] - q3[3]) / q1[3]
+    print(f"  text_convergence_pct:  {text_speed*100:.1f}%  (from {q1[2]:.4f} to {q3[2]:.4f})")
+    print(f"  audio_convergence_pct: {audio_speed*100:.1f}%  (from {q1[3]:.4f} to {q3[3]:.4f})")
+    print(f"  audio/text_speed_ratio: {audio_speed/text_speed:.3f}" if text_speed > 0 else "  text not converging")
+    # Early vs late audio/text ratio
+    early_ratio = convergence_log[1][3] / convergence_log[1][2]
+    late_ratio = convergence_log[-1][3] / convergence_log[-1][2]
+    print(f"  early_audio/text_ratio: {early_ratio:.3f}")
+    print(f"  late_audio/text_ratio:  {late_ratio:.3f}")
 print(f"val_loss:         {val_loss:.6f}")
 print(f"text_bpb:         {text_bpb:.6f}")
 print(f"audio_loss:       {audio_loss:.6f}")
