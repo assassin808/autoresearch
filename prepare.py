@@ -54,7 +54,7 @@ SNAC_OFFSET = TEXT_VOCAB_SIZE + 2      # 8194 — first SNAC token
 TOTAL_VOCAB_SIZE = SNAC_OFFSET + SNAC_NUM_LEVELS * SNAC_CODEBOOK_SIZE  # 20482
 
 # Audio data settings
-AUDIO_TRAIN_HOURS = 100   # LibriSpeech train-clean-100
+AUDIO_TRAIN_HOURS = 115   # LibriSpeech train-clean-100 + dev-other + test-clean + test-other
 AUDIO_VAL_HOURS = 5       # LibriSpeech dev-clean
 AUDIO_MIX_RATIO = 0.3     # fraction of batch rows that are audio (rest are text)
 
@@ -330,7 +330,9 @@ def prepare_audio_data():
     ls_base = "https://www.openslr.org/resources/12"
     ls_dir = os.path.join(AUDIO_DIR, "LibriSpeech")
 
-    # Process training splits sequentially, cleaning up after each
+    # Process training splits sequentially, cleaning up after each.
+    # train-clean-100 (~100h) + dev-other (~5h) + test-clean (~5h) + test-other (~5h) ≈ 115h
+    # train-clean-360 omitted due to encoding time (~2h on GPU); can be added later.
     train_splits = [
         ("train-clean-100", f"{ls_base}/train-clean-100.tar.gz"),
         ("dev-other",       f"{ls_base}/dev-other.tar.gz"),
