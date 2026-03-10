@@ -465,6 +465,7 @@ ADAM_BETAS = (0.8, 0.95) # Adam beta1, beta2
 WARMUP_RATIO = 0.0      # fraction of time budget for LR warmup
 WARMDOWN_RATIO = 0.7    # fraction of time budget for LR warmdown — was 0.5
 FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
+AUDIO_LOSS_WEIGHT = 1.0  # audio loss multiplier (1.0 = equal weight)
 
 # Model size
 DEPTH = 8               # number of transformer layers
@@ -562,6 +563,7 @@ smooth_audio_loss = 0
 total_training_time = 0
 step = 0
 convergence_log = []  # (step, progress, text_loss, audio_loss, total_loss)
+gradient_log = []     # (step, progress, text_grad_per_row, audio_grad_per_row, ratio, matrix_norm)
 
 while True:
     torch.cuda.synchronize()
@@ -590,6 +592,30 @@ while True:
         loss = loss / grad_accum_steps
         loss.backward()
         x, y, epoch = next(train_loader)
+
+    # Gradient analysis (every 50 steps after warmup)
+    if step % 50 == 0 and step > 10:
+        with torch.no_grad():
+            # Analyze embedding gradients by modality
+            wte_grad = model._orig_mod.transformer.wte.weight.grad
+            if wte_grad is not None:
+                text_grad_norm = wte_grad[:AUDIO_START_ID].float().norm().item()
+                audio_grad_norm = wte_grad[AUDIO_START_ID:].float().norm().item()
+                # Per-row norms (average grad magnitude per token type)
+                n_text = AUDIO_START_ID
+                n_audio = wte_grad.shape[0] - AUDIO_START_ID
+                text_per_row = text_grad_norm / (n_text ** 0.5)
+                audio_per_row = audio_grad_norm / (n_audio ** 0.5)
+                # Transformer matrix gradient norm (shared params)
+                matrix_grad_norm = 0.0
+                n_matrix = 0
+                for p in model._orig_mod.transformer.h.parameters():
+                    if p.grad is not None:
+                        matrix_grad_norm += p.grad.float().norm().item() ** 2
+                        n_matrix += 1
+                matrix_grad_norm = matrix_grad_norm ** 0.5
+                gradient_log.append((step, progress, text_per_row, audio_per_row,
+                                    audio_per_row / max(text_per_row, 1e-10), matrix_grad_norm))
 
     # Progress and schedules
     progress = min(total_training_time / TIME_BUDGET, 1.0)
@@ -692,6 +718,15 @@ if len(convergence_log) >= 4:
     late_ratio = convergence_log[-1][3] / convergence_log[-1][2]
     print(f"  early_audio/text_ratio: {early_ratio:.3f}")
     print(f"  late_audio/text_ratio:  {late_ratio:.3f}")
+if len(gradient_log) >= 2:
+    print("gradient_analysis:")
+    for s, p, tg, ag, ratio, mn in gradient_log:
+        print(f"  step={s:4d} prog={p:.3f} text_grad={tg:.6f} audio_grad={ag:.6f} a/t_ratio={ratio:.3f} matrix_norm={mn:.4f}")
+    # Trend analysis
+    early_ratio = gradient_log[1][4] if len(gradient_log) > 1 else gradient_log[0][4]
+    late_ratio = gradient_log[-1][4]
+    print(f"  early_a/t_grad_ratio: {early_ratio:.3f}")
+    print(f"  late_a/t_grad_ratio:  {late_ratio:.3f}")
 print(f"val_loss:         {val_loss:.6f}")
 print(f"text_bpb:         {text_bpb:.6f}")
 print(f"audio_loss:       {audio_loss:.6f}")
