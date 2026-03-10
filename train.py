@@ -273,10 +273,9 @@ class GPT(nn.Module):
         embed_group = dict(kind='adamw', params=embedding_params, lr=embedding_lr * dmodel_lr_scale, betas=adam_betas, eps=1e-10, weight_decay=2.0)
         ve_group = dict(kind='adamw', params=value_embeds_params, lr=embedding_lr * dmodel_lr_scale, betas=adam_betas, eps=1e-10, weight_decay=2.0)
         if embed_wd_per_row is not None:
-            lm_head_group['wd_per_row'] = embed_wd_per_row
+            # Only apply per-row WD to wte embedding (the main embedding table)
+            # lm_head and VE keep uniform WD=2.0 since they have different dynamics
             embed_group['wd_per_row'] = embed_wd_per_row
-            # VE tables have same vocab dim, so same per-row WD
-            ve_group['wd_per_row'] = embed_wd_per_row
         param_groups = [
             lm_head_group,
             embed_group,
@@ -547,8 +546,8 @@ grad_accum_steps = TOTAL_BATCH_SIZE // tokens_per_fwdbwd
 # Frequency-adaptive per-row WD for embeddings
 # Text tokens (0..AUDIO_START_ID-1): low WD (frequently updated, need rich representations)
 # Audio tokens (AUDIO_START_ID..vocab_size-1): high WD (rare, need regularization)
-EMBED_WD_TEXT = 0.5       # WD for text embeddings (lower = less regularization)
-EMBED_WD_AUDIO = 4.0      # WD for audio embeddings (higher = more regularization)
+EMBED_WD_TEXT = 1.0       # WD for text embeddings (lower = less regularization)
+EMBED_WD_AUDIO = 3.0      # WD for audio embeddings (higher = more regularization)
 embed_wd_per_row = torch.ones(vocab_size, 1, device=device)
 embed_wd_per_row[:AUDIO_START_ID] = EMBED_WD_TEXT
 embed_wd_per_row[AUDIO_START_ID:] = EMBED_WD_AUDIO
