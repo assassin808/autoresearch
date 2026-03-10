@@ -521,7 +521,7 @@ AUDIO_UPWEIGHT_MAX = 1.5       # H2: max audio loss weight at end of training
 GRAD_NORM_BALANCE = False      # H3: balance gradient norms between modalities
 PERROW_LR = False              # H4: per-row adaptive LR for embeddings
 PERROW_LR_ALPHA = 0.3          # H4: exponent for frequency-based LR scaling
-ADADECAY_WD = False            # H5: gradient-magnitude adaptive WD (inspired by AdaDecay)
+ADADECAY_WD = True            # H5: gradient-magnitude adaptive WD (inspired by AdaDecay)
 ADADECAY_BETA = 0.99           # H5: EMA smoothing for gradient magnitudes
 MODALITY_REBALANCE = False     # H6: MILES-inspired modality utilization rebalancing
 MODALITY_REBALANCE_ALPHA = 0.5 # H6: strength of rebalancing
@@ -580,7 +580,7 @@ grad_accum_steps = TOTAL_BATCH_SIZE // tokens_per_fwdbwd
 # Text tokens (0..AUDIO_START_ID-1): low WD (frequently updated, need rich representations)
 # Audio tokens (AUDIO_START_ID..vocab_size-1): high WD (rare, need regularization)
 EMBED_WD_TEXT = 0.0       # WD for text embeddings (lower = less regularization)
-EMBED_WD_AUDIO = 0.3      # WD for audio embeddings (higher = more regularization)
+EMBED_WD_AUDIO = 2.5      # WD for audio embeddings (higher = more regularization)
 embed_wd_per_row = torch.ones(vocab_size, 1, device=device)
 embed_wd_per_row[:AUDIO_START_ID] = EMBED_WD_TEXT
 embed_wd_per_row[AUDIO_START_ID:] = EMBED_WD_AUDIO
