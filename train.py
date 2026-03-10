@@ -291,7 +291,7 @@ class GPT(nn.Module):
             group_params = [p for p in matrix_params if p.shape == shape]
             param_groups.append(dict(
                 kind='muon', params=group_params, lr=matrix_lr,
-                momentum=0.95, ns_steps=10, beta2=0.95, weight_decay=weight_decay,
+                momentum=0.95, ns_steps=5, beta2=0.95, weight_decay=weight_decay,
             ))
         optimizer = MuonAdamW(param_groups)
         for group in optimizer.param_groups:
@@ -635,7 +635,7 @@ def get_muon_momentum(step):
     return (1 - frac) * 0.85 + frac * 0.95
 
 def get_weight_decay(progress):
-    return WEIGHT_DECAY  # constant WD (was decaying to 0)
+    return WEIGHT_DECAY * get_lr_multiplier(progress)  # WD decays with LR
 
 # ---------------------------------------------------------------------------
 # Training loop
