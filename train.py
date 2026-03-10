@@ -511,9 +511,9 @@ UNEMBEDDING_LR = 0.004  # learning rate for lm_head (Adam)
 MATRIX_LR = 0.06        # learning rate for matrix parameters (Muon) — was 0.05
 SCALAR_LR = 0.5         # learning rate for per-layer scalars (Adam)
 WEIGHT_DECAY = 0.2      # Muon WD — tuned down from 0.5 with more data
-ADAM_BETAS = (0.9, 0.95) # Adam beta1, beta2
+ADAM_BETAS = (0.8, 0.95) # Adam beta1, beta2
 WARMUP_RATIO = 0.0      # fraction of time budget for LR warmup
-WARMDOWN_RATIO = 0.7    # fraction of time budget for LR warmdown — was 0.5
+WARMDOWN_RATIO = 0.6    # fraction of time budget for LR warmdown — was 0.5
 FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
 # Experiment flags (enable one at a time for testing)
 AUDIO_UPWEIGHT_SCHEDULE = False  # H2: progressively upweight audio loss
