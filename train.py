@@ -516,9 +516,9 @@ WARMUP_RATIO = 0.0      # fraction of time budget for LR warmup
 WARMDOWN_RATIO = 0.7    # fraction of time budget for LR warmdown — was 0.5
 FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
 # Experiment flags (enable one at a time for testing)
-AUDIO_UPWEIGHT_SCHEDULE = True  # H2: progressively upweight audio loss
-AUDIO_UPWEIGHT_MAX = 1.2       # H2: max audio loss weight at end of training
-GRAD_NORM_BALANCE = False      # H3: balance gradient norms between modalities
+AUDIO_UPWEIGHT_SCHEDULE = False  # H2: progressively upweight audio loss
+AUDIO_UPWEIGHT_MAX = 1.5       # H2: max audio loss weight at end of training
+GRAD_NORM_BALANCE = True      # H3: balance gradient norms between modalities
 PERROW_LR = False              # H4: per-row adaptive LR for embeddings
 PERROW_LR_ALPHA = 0.3          # H4: exponent for frequency-based LR scaling
 ADADECAY_WD = False            # H5: gradient-magnitude adaptive WD (inspired by AdaDecay)
