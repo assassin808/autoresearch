@@ -611,6 +611,9 @@ optimizer = model.setup_optimizer(
     embed_lr_per_row=embed_lr_per_row,
 )
 
+# H10: Weight tying — share embedding and output weights
+model._orig_mod = model  # will be replaced by compile, but need ref first
+model._orig_mod.lm_head.weight = model._orig_mod.transformer.wte.weight
 model = torch.compile(model, dynamic=False)
 
 train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
@@ -635,7 +638,7 @@ def get_muon_momentum(step):
     return (1 - frac) * 0.85 + frac * 0.95
 
 def get_weight_decay(progress):
-    return WEIGHT_DECAY * get_lr_multiplier(progress)**0.5  # WD decays slower than LR
+    return WEIGHT_DECAY  # constant WD (was decaying to 0)
 
 # ---------------------------------------------------------------------------
 # Training loop
