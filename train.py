@@ -521,6 +521,10 @@ AUDIO_UPWEIGHT_MAX = 1.5       # H2: max audio loss weight at end of training
 GRAD_NORM_BALANCE = False      # H3: balance gradient norms between modalities
 PERROW_LR = False              # H4: per-row adaptive LR for embeddings
 PERROW_LR_ALPHA = 0.3          # H4: exponent for frequency-based LR scaling
+ADADECAY_WD = False            # H5: gradient-magnitude adaptive WD (inspired by AdaDecay)
+ADADECAY_BETA = 0.99           # H5: EMA smoothing for gradient magnitudes
+MODALITY_REBALANCE = False     # H6: MILES-inspired modality utilization rebalancing
+MODALITY_REBALANCE_ALPHA = 0.5 # H6: strength of rebalancing
 
 # Model size
 DEPTH = 8               # number of transformer layers
@@ -684,6 +688,57 @@ while True:
                     for key, ve_embed in model._orig_mod.value_embeds.items():
                         if ve_embed.weight.grad is not None:
                             ve_embed.weight.grad[AUDIO_START_ID:] *= scale
+
+    # H5: AdaDecay — gradient-magnitude adaptive WD per embedding row
+    # Active rows (high grad magnitude) get LESS decay; dormant rows get MORE decay
+    # Inspired by Apple's AdaDecay (2025): λ_i = λ_base / (1 + β * |grad_i|)
+    if ADADECAY_WD:
+        with torch.no_grad():
+            for group in optimizer.param_groups:
+                if group.get('wd_per_row') is not None:
+                    for p in group['params']:
+                        if p.grad is not None and p.dim() == 2:
+                            # Compute per-row gradient RMS
+                            grad_rms = p.grad.float().pow(2).mean(dim=1, keepdim=True).sqrt()
+                            # Update EMA of gradient magnitudes
+                            state = optimizer.state[p]
+                            if 'grad_rms_ema' not in state:
+                                state['grad_rms_ema'] = grad_rms.clone()
+                            else:
+                                state['grad_rms_ema'].lerp_(grad_rms, 1 - ADADECAY_BETA)
+                            # Adaptive WD: high gradient → low WD, low gradient → high WD
+                            # Scale: base_wd * (median_rms / (rms + eps))^0.5
+                            rms = state['grad_rms_ema']
+                            median_rms = rms.median().clamp(min=1e-8)
+                            ada_scale = (median_rms / (rms + 1e-8)).sqrt().clamp(0.1, 10.0)
+                            group['wd_per_row'] = embed_wd_per_row * ada_scale.to(embed_wd_per_row.dtype)
+
+    # H6: MILES-inspired modality utilization rebalancing
+    # Track per-modality "utilization" = how much each modality's loss is improving
+    # If one modality is under-utilized, boost its learning rate
+    if MODALITY_REBALANCE:
+        with torch.no_grad():
+            wte_grad = model._orig_mod.transformer.wte.weight.grad
+            if wte_grad is not None:
+                # Compute per-modality gradient utilization (proxy: grad norm relative to param norm)
+                text_grad_norm = wte_grad[:AUDIO_START_ID].float().norm()
+                audio_grad_norm = wte_grad[AUDIO_START_ID:].float().norm()
+                text_param_norm = model._orig_mod.transformer.wte.weight[:AUDIO_START_ID].float().norm()
+                audio_param_norm = model._orig_mod.transformer.wte.weight[AUDIO_START_ID:].float().norm()
+                # Utilization = grad_norm / param_norm (how much the optimizer is "using" each modality)
+                text_util = text_grad_norm / (text_param_norm + 1e-8)
+                audio_util = audio_grad_norm / (audio_param_norm + 1e-8)
+                # Rebalance: scale under-utilized modality's gradients up
+                if audio_util > 1e-10 and text_util > 1e-10:
+                    # Target equal utilization; scale = (text_util / audio_util)^alpha
+                    rebal_scale = (text_util / audio_util).pow(MODALITY_REBALANCE_ALPHA).clamp(0.2, 5.0)
+                    for name, p in [('wte', model._orig_mod.transformer.wte.weight),
+                                   ('lm_head', model._orig_mod.lm_head.weight)]:
+                        if p.grad is not None:
+                            p.grad[AUDIO_START_ID:] *= rebal_scale
+                    for key, ve_embed in model._orig_mod.value_embeds.items():
+                        if ve_embed.weight.grad is not None:
+                            ve_embed.weight.grad[AUDIO_START_ID:] *= rebal_scale
 
     # Progress and schedules
     progress = min(total_training_time / TIME_BUDGET, 1.0)
