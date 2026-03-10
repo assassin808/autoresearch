@@ -273,9 +273,10 @@ class GPT(nn.Module):
         embed_group = dict(kind='adamw', params=embedding_params, lr=embedding_lr * dmodel_lr_scale, betas=adam_betas, eps=1e-10, weight_decay=2.0)
         ve_group = dict(kind='adamw', params=value_embeds_params, lr=embedding_lr * dmodel_lr_scale, betas=adam_betas, eps=1e-10, weight_decay=2.0)
         if embed_wd_per_row is not None:
-            # Apply per-row WD to wte and VE (both have vocab_size rows)
+            # Apply per-row WD to wte, VE, and lm_head (all have vocab_size rows)
             embed_group['wd_per_row'] = embed_wd_per_row
             ve_group['wd_per_row'] = embed_wd_per_row
+            lm_head_group['wd_per_row'] = embed_wd_per_row
         param_groups = [
             lm_head_group,
             embed_group,
