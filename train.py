@@ -493,7 +493,7 @@ ADAM_BETAS = (0.8, 0.95) # Adam beta1, beta2
 WARMUP_RATIO = 0.0      # fraction of time budget for LR warmup
 WARMDOWN_RATIO = 0.7    # fraction of time budget for LR warmdown — was 0.5
 FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
-AUDIO_UPWEIGHT_SCHEDULE = True  # progressively upweight audio loss
+AUDIO_UPWEIGHT_SCHEDULE = False  # progressively upweight audio loss
 AUDIO_UPWEIGHT_MAX = 1.5       # max audio loss weight at end of training
 
 # Model size
