@@ -546,7 +546,7 @@ grad_accum_steps = TOTAL_BATCH_SIZE // tokens_per_fwdbwd
 # Frequency-adaptive per-row WD for embeddings
 # Text tokens (0..AUDIO_START_ID-1): low WD (frequently updated, need rich representations)
 # Audio tokens (AUDIO_START_ID..vocab_size-1): high WD (rare, need regularization)
-EMBED_WD_TEXT = 0.5       # WD for text embeddings (lower = less regularization)
+EMBED_WD_TEXT = 0.2       # WD for text embeddings (lower = less regularization)
 EMBED_WD_AUDIO = 3.0      # WD for audio embeddings (higher = more regularization)
 embed_wd_per_row = torch.ones(vocab_size, 1, device=device)
 embed_wd_per_row[:AUDIO_START_ID] = EMBED_WD_TEXT
