@@ -516,7 +516,7 @@ WARMUP_RATIO = 0.0      # fraction of time budget for LR warmup
 WARMDOWN_RATIO = 0.7    # fraction of time budget for LR warmdown — was 0.5
 FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
 # Experiment flags (enable one at a time for testing)
-AUDIO_UPWEIGHT_SCHEDULE = False  # H2: progressively upweight audio loss
+AUDIO_UPWEIGHT_SCHEDULE = True  # H2: progressively upweight audio loss
 AUDIO_UPWEIGHT_MAX = 1.5       # H2: max audio loss weight at end of training
 GRAD_NORM_BALANCE = False      # H3: balance gradient norms between modalities
 PERROW_LR = False              # H4: per-row adaptive LR for embeddings
@@ -580,7 +580,7 @@ grad_accum_steps = TOTAL_BATCH_SIZE // tokens_per_fwdbwd
 # Text tokens (0..AUDIO_START_ID-1): low WD (frequently updated, need rich representations)
 # Audio tokens (AUDIO_START_ID..vocab_size-1): high WD (rare, need regularization)
 EMBED_WD_TEXT = 0.0       # WD for text embeddings (lower = less regularization)
-EMBED_WD_AUDIO = 0.2      # WD for audio embeddings (higher = more regularization)
+EMBED_WD_AUDIO = 2.5      # WD for audio embeddings (higher = more regularization)
 embed_wd_per_row = torch.ones(vocab_size, 1, device=device)
 embed_wd_per_row[:AUDIO_START_ID] = EMBED_WD_TEXT
 embed_wd_per_row[AUDIO_START_ID:] = EMBED_WD_AUDIO
