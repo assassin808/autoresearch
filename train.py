@@ -437,13 +437,107 @@ class MuonAdamW(torch.optim.Optimizer):
                         self._muon_beta2_t, group["ns_steps"], red_dim)
         torch._foreach_copy_(params, list(stacked_params.unbind(0)))
 
+    def _step_muon_dual(self, group, text_grads_dict, audio_alpha=0.5):
+        """Dual-NS Muon: NS(g_text) and NS(g_audio) independently, then combine.
+
+        Instead of NS(g_text + g_audio), computes:
+          update = (1-α) * NS(momentum_text) + α * NS(momentum_audio)
+        This preserves each modality's spectral structure through orthogonalization.
+        """
+        params = group['params']
+        if not params:
+            return
+        p = params[0]
+        state = self.state[p]
+        num_params = len(params)
+        shape, device, dtype = p.shape, p.device, p.dtype
+        # Separate momentum buffers for each modality
+        if "momentum_buffer_text" not in state:
+            state["momentum_buffer_text"] = torch.zeros(num_params, *shape, dtype=dtype, device=device)
+            state["momentum_buffer_audio"] = torch.zeros(num_params, *shape, dtype=dtype, device=device)
+        if "second_momentum_buffer" not in state:
+            state_shape = (num_params, shape[-2], 1) if shape[-2] >= shape[-1] else (num_params, 1, shape[-1])
+            state["second_momentum_buffer"] = torch.zeros(state_shape, dtype=dtype, device=device)
+        red_dim = -1 if shape[-2] >= shape[-1] else -2
+
+        # Current grads are audio (from second backward); text grads were saved
+        stacked_audio_grads = torch.stack([p.grad for p in params])
+        stacked_text_grads = torch.stack([text_grads_dict[id(p)] for p in params])
+        stacked_params = torch.stack(params)
+
+        momentum = group["momentum"]
+        lr = group["lr"] * max(1.0, shape[-2] / shape[-1])**0.5
+        wd = group["weight_decay"]
+
+        # Apply Nesterov momentum + NS to each modality independently (uncompiled)
+        mom = torch.tensor(momentum, dtype=dtype, device=device)
+
+        # Text path
+        state["momentum_buffer_text"].lerp_(stacked_text_grads, 1 - mom)
+        g_text = stacked_text_grads.lerp_(state["momentum_buffer_text"], mom)
+        X_text = g_text.bfloat16()
+        X_text = X_text / (X_text.norm(dim=(-2, -1), keepdim=True) * 1.02 + 1e-6)
+        if g_text.size(-2) > g_text.size(-1):
+            for a, b, c in polar_express_coeffs[:group["ns_steps"]]:
+                A = X_text.mT @ X_text
+                B = b * A + c * (A @ A)
+                X_text = a * X_text + X_text @ B
+        else:
+            for a, b, c in polar_express_coeffs[:group["ns_steps"]]:
+                A = X_text @ X_text.mT
+                B = b * A + c * (A @ A)
+                X_text = a * X_text + B @ X_text
+
+        # Audio path
+        state["momentum_buffer_audio"].lerp_(stacked_audio_grads, 1 - mom)
+        g_audio = stacked_audio_grads.lerp_(state["momentum_buffer_audio"], mom)
+        X_audio = g_audio.bfloat16()
+        X_audio = X_audio / (X_audio.norm(dim=(-2, -1), keepdim=True) * 1.02 + 1e-6)
+        if g_audio.size(-2) > g_audio.size(-1):
+            for a, b, c in polar_express_coeffs[:group["ns_steps"]]:
+                A = X_audio.mT @ X_audio
+                B = b * A + c * (A @ A)
+                X_audio = a * X_audio + X_audio @ B
+        else:
+            for a, b, c in polar_express_coeffs[:group["ns_steps"]]:
+                A = X_audio @ X_audio.mT
+                B = b * A + c * (A @ A)
+                X_audio = a * X_audio + B @ X_audio
+
+        # Combine: weighted average of orthogonalized directions
+        g = (1 - audio_alpha) * X_text + audio_alpha * X_audio
+
+        # NorMuon variance reduction (on combined update)
+        beta2 = group["beta2"] if group["beta2"] is not None else 0.0
+        beta2_t = torch.tensor(beta2, dtype=g.dtype, device=device)
+        v_mean = g.float().square().mean(dim=red_dim, keepdim=True)
+        red_dim_size = g.size(red_dim)
+        v_norm_sq = v_mean.sum(dim=(-2, -1), keepdim=True) * red_dim_size
+        v_norm = v_norm_sq.sqrt()
+        state["second_momentum_buffer"].lerp_(v_mean.to(dtype=state["second_momentum_buffer"].dtype), 1 - beta2_t)
+        step_size = state["second_momentum_buffer"].clamp_min(1e-10).rsqrt()
+        scaled_sq_sum = (v_mean * red_dim_size) * step_size.float().square()
+        v_norm_new = scaled_sq_sum.sum(dim=(-2, -1), keepdim=True).sqrt()
+        final_scale = step_size * (v_norm / v_norm_new.clamp_min(1e-10))
+        g = g * final_scale.to(g.dtype)
+
+        # Cautious WD + update
+        lr_t = torch.tensor(lr, dtype=g.dtype, device=device)
+        wd_t = torch.tensor(wd, dtype=g.dtype, device=device)
+        mask = (g * stacked_params) >= 0
+        stacked_params.sub_(lr_t * g + lr_t * wd_t * stacked_params * mask)
+        torch._foreach_copy_(params, list(stacked_params.unbind(0)))
+
     @torch.no_grad()
-    def step(self):
+    def step(self, text_grads_dict=None, audio_alpha=0.5):
         for group in self.param_groups:
             if group['kind'] == 'adamw':
                 self._step_adamw(group)
             elif group['kind'] == 'muon':
-                self._step_muon(group)
+                if text_grads_dict is not None:
+                    self._step_muon_dual(group, text_grads_dict, audio_alpha)
+                else:
+                    self._step_muon(group)
 
 # ---------------------------------------------------------------------------
 # Hyperparameters (edit these directly, no CLI flags needed)
@@ -465,8 +559,8 @@ ADAM_BETAS = (0.8, 0.95) # Adam beta1, beta2
 WARMUP_RATIO = 0.0      # fraction of time budget for LR warmup
 WARMDOWN_RATIO = 0.7    # fraction of time budget for LR warmdown — was 0.5
 FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
-AUDIO_LOSS_WEIGHT = 1.0  # audio loss multiplier (1.0 = equal weight)
-AUDIO_MIX_RATIO = 0.5   # fraction of batch rows that are audio (default 0.3)
+DUAL_NS = True           # separate NS orthogonalization per modality
+DUAL_NS_AUDIO_ALPHA = 0.5  # weight for audio NS direction (0.5 = equal)
 
 # Model size
 DEPTH = 8               # number of transformer layers
@@ -529,7 +623,7 @@ optimizer = model.setup_optimizer(
 
 model = torch.compile(model, dynamic=False)
 
-train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train", audio_ratio=AUDIO_MIX_RATIO)
+train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
 x, y, epoch = next(train_loader)  # prefetch first batch
 
 print(f"Time budget: {TIME_BUDGET}s")
@@ -559,77 +653,89 @@ def get_weight_decay(progress):
 
 t_start_training = time.time()
 smooth_train_loss = 0
-smooth_text_loss = 0
-smooth_audio_loss = 0
 total_training_time = 0
 step = 0
-convergence_log = []  # (step, progress, text_loss, audio_loss, total_loss)
-gradient_log = []     # (step, progress, text_grad_per_row, audio_grad_per_row, ratio, matrix_norm)
 
 while True:
     torch.cuda.synchronize()
     t0 = time.time()
-    step_text_nats = 0.0
-    step_audio_nats = 0.0
-    step_text_count = 0
-    step_audio_count = 0
-    for micro_step in range(grad_accum_steps):
-        do_track = (step % 20 == 0)
-        with autocast_ctx:
-            if do_track:
+
+    if DUAL_NS:
+        # Dual-NS mode: separate backward passes for text and audio per microstep.
+        # Within each microstep: forward → text_backward(retain_graph) → save Muon text grads
+        # → audio_backward → accumulate Muon audio grads separately.
+        # AdamW params get combined grads from both backward passes naturally.
+        muon_params = []
+        for group in optimizer.param_groups:
+            if group['kind'] == 'muon':
+                muon_params.extend(group['params'])
+
+        # Initialize text grad accumulators
+        text_grads_accum = {id(p): torch.zeros_like(p) for p in muon_params}
+
+        for micro_step in range(grad_accum_steps):
+            with autocast_ctx:
                 per_token_loss = model(x, y, reduction='none')
-                # Per-modality tracking
-                with torch.no_grad():
-                    audio_mask = (y >= AUDIO_START_ID).view(-1)
-                    text_mask = ~audio_mask
-                    step_text_nats += (per_token_loss * text_mask.float()).sum().item()
-                    step_text_count += text_mask.sum().item()
-                    step_audio_nats += (per_token_loss * audio_mask.float()).sum().item()
-                    step_audio_count += audio_mask.sum().item()
-                loss = per_token_loss.mean()
-            else:
+            train_loss = per_token_loss.mean().detach()
+
+            # Split by modality
+            audio_mask = (y.view(-1) >= AUDIO_START_ID).float()
+            text_mask = 1.0 - audio_mask
+            text_count = text_mask.sum().clamp_min(1)
+            audio_count = audio_mask.sum().clamp_min(1)
+
+            # Text backward (retain graph for audio backward)
+            text_loss = (per_token_loss * text_mask).sum() / text_count / grad_accum_steps
+            text_loss.backward(retain_graph=True)
+
+            # Save and accumulate Muon text gradients
+            for p in muon_params:
+                if p.grad is not None:
+                    text_grads_accum[id(p)].add_(p.grad)
+                    p.grad = None  # clear so audio backward doesn't accumulate on top
+
+            # Audio backward (this frees the graph)
+            audio_loss_val = (per_token_loss * audio_mask).sum() / audio_count / grad_accum_steps
+            audio_loss_val.backward()
+            # Now Muon params have audio grads, AdamW params have text+audio grads
+
+            x, y, epoch = next(train_loader)
+
+        # Step with dual-NS for Muon, normal AdamW for rest
+        progress = min(total_training_time / TIME_BUDGET, 1.0)
+        lrm = get_lr_multiplier(progress)
+        muon_momentum = get_muon_momentum(step)
+        muon_weight_decay = get_weight_decay(progress)
+        for group in optimizer.param_groups:
+            group["lr"] = group["initial_lr"] * lrm
+            if group['kind'] == 'muon':
+                group["momentum"] = muon_momentum
+                group["weight_decay"] = muon_weight_decay
+        optimizer.step(text_grads_dict=text_grads_accum, audio_alpha=DUAL_NS_AUDIO_ALPHA)
+        model.zero_grad(set_to_none=True)
+        del text_grads_accum
+
+    else:
+        for micro_step in range(grad_accum_steps):
+            with autocast_ctx:
                 loss = model(x, y)
-        train_loss = loss.detach()
-        loss = loss / grad_accum_steps
-        loss.backward()
-        x, y, epoch = next(train_loader)
+            train_loss = loss.detach()
+            loss = loss / grad_accum_steps
+            loss.backward()
+            x, y, epoch = next(train_loader)
 
-    # Gradient analysis (every 50 steps after warmup)
-    if step % 50 == 0 and step > 10:
-        with torch.no_grad():
-            # Analyze embedding gradients by modality
-            wte_grad = model._orig_mod.transformer.wte.weight.grad
-            if wte_grad is not None:
-                text_grad_norm = wte_grad[:AUDIO_START_ID].float().norm().item()
-                audio_grad_norm = wte_grad[AUDIO_START_ID:].float().norm().item()
-                # Per-row norms (average grad magnitude per token type)
-                n_text = AUDIO_START_ID
-                n_audio = wte_grad.shape[0] - AUDIO_START_ID
-                text_per_row = text_grad_norm / (n_text ** 0.5)
-                audio_per_row = audio_grad_norm / (n_audio ** 0.5)
-                # Transformer matrix gradient norm (shared params)
-                matrix_grad_norm = 0.0
-                n_matrix = 0
-                for p in model._orig_mod.transformer.h.parameters():
-                    if p.grad is not None:
-                        matrix_grad_norm += p.grad.float().norm().item() ** 2
-                        n_matrix += 1
-                matrix_grad_norm = matrix_grad_norm ** 0.5
-                gradient_log.append((step, progress, text_per_row, audio_per_row,
-                                    audio_per_row / max(text_per_row, 1e-10), matrix_grad_norm))
-
-    # Progress and schedules
-    progress = min(total_training_time / TIME_BUDGET, 1.0)
-    lrm = get_lr_multiplier(progress)
-    muon_momentum = get_muon_momentum(step)
-    muon_weight_decay = get_weight_decay(progress)
-    for group in optimizer.param_groups:
-        group["lr"] = group["initial_lr"] * lrm
-        if group['kind'] == 'muon':
-            group["momentum"] = muon_momentum
-            group["weight_decay"] = muon_weight_decay
-    optimizer.step()
-    model.zero_grad(set_to_none=True)
+        # Progress and schedules
+        progress = min(total_training_time / TIME_BUDGET, 1.0)
+        lrm = get_lr_multiplier(progress)
+        muon_momentum = get_muon_momentum(step)
+        muon_weight_decay = get_weight_decay(progress)
+        for group in optimizer.param_groups:
+            group["lr"] = group["initial_lr"] * lrm
+            if group['kind'] == 'muon':
+                group["momentum"] = muon_momentum
+                group["weight_decay"] = muon_weight_decay
+        optimizer.step()
+        model.zero_grad(set_to_none=True)
 
     train_loss_f = train_loss.item()
 
@@ -654,20 +760,7 @@ while True:
     mfu = 100 * num_flops_per_token * TOTAL_BATCH_SIZE / dt / H100_BF16_PEAK_FLOPS
     remaining = max(0, TIME_BUDGET - total_training_time)
 
-    # Per-modality convergence tracking
-    if step % 20 == 0 and step_text_count > 0 and step_audio_count > 0:
-        text_l = step_text_nats / step_text_count
-        audio_l = step_audio_nats / step_audio_count
-        ema_b = 0.9
-        smooth_text_loss = ema_b * smooth_text_loss + (1 - ema_b) * text_l
-        smooth_audio_loss = ema_b * smooth_audio_loss + (1 - ema_b) * audio_l
-        n = step // 20 + 1
-        db_text = smooth_text_loss / (1 - ema_b**n)
-        db_audio = smooth_audio_loss / (1 - ema_b**n)
-        convergence_log.append((step, progress, db_text, db_audio, debiased_smooth_loss))
-        print(f"\rstep {step:05d} ({pct_done:.1f}%) | loss: {debiased_smooth_loss:.6f} | text: {db_text:.4f} | audio: {db_audio:.4f} | ratio: {db_audio/db_text:.2f} | lrm: {lrm:.2f} | remaining: {remaining:.0f}s    ", end="", flush=True)
-    else:
-        print(f"\rstep {step:05d} ({pct_done:.1f}%) | loss: {debiased_smooth_loss:.6f} | lrm: {lrm:.2f} | dt: {dt*1000:.0f}ms | tok/sec: {tok_per_sec:,} | mfu: {mfu:.1f}% | epoch: {epoch} | remaining: {remaining:.0f}s    ", end="", flush=True)
+    print(f"\rstep {step:05d} ({pct_done:.1f}%) | loss: {debiased_smooth_loss:.6f} | lrm: {lrm:.2f} | dt: {dt*1000:.0f}ms | tok/sec: {tok_per_sec:,} | mfu: {mfu:.1f}% | epoch: {epoch} | remaining: {remaining:.0f}s    ", end="", flush=True)
 
     # GC management (Python's GC causes ~500ms stalls)
     if step == 0:
@@ -699,35 +792,6 @@ steady_state_mfu = 100 * num_flops_per_token * TOTAL_BATCH_SIZE * (step - 10) / 
 peak_vram_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
 
 print("---")
-# Convergence analysis
-if len(convergence_log) >= 4:
-    print("convergence_analysis:")
-    # Print convergence trajectory
-    for s, p, tl, al, total in convergence_log:
-        print(f"  step={s:4d} prog={p:.3f} text={tl:.4f} audio={al:.4f} ratio={al/tl:.3f} total={total:.4f}")
-    # Compute convergence speeds: relative improvement from first quarter to last quarter
-    n = len(convergence_log)
-    q1 = convergence_log[n//4]  # 25% mark
-    q3 = convergence_log[3*n//4]  # 75% mark
-    text_speed = (q1[2] - q3[2]) / q1[2]  # fractional reduction
-    audio_speed = (q1[3] - q3[3]) / q1[3]
-    print(f"  text_convergence_pct:  {text_speed*100:.1f}%  (from {q1[2]:.4f} to {q3[2]:.4f})")
-    print(f"  audio_convergence_pct: {audio_speed*100:.1f}%  (from {q1[3]:.4f} to {q3[3]:.4f})")
-    print(f"  audio/text_speed_ratio: {audio_speed/text_speed:.3f}" if text_speed > 0 else "  text not converging")
-    # Early vs late audio/text ratio
-    early_ratio = convergence_log[1][3] / convergence_log[1][2]
-    late_ratio = convergence_log[-1][3] / convergence_log[-1][2]
-    print(f"  early_audio/text_ratio: {early_ratio:.3f}")
-    print(f"  late_audio/text_ratio:  {late_ratio:.3f}")
-if len(gradient_log) >= 2:
-    print("gradient_analysis:")
-    for s, p, tg, ag, ratio, mn in gradient_log:
-        print(f"  step={s:4d} prog={p:.3f} text_grad={tg:.6f} audio_grad={ag:.6f} a/t_ratio={ratio:.3f} matrix_norm={mn:.4f}")
-    # Trend analysis
-    early_ratio = gradient_log[1][4] if len(gradient_log) > 1 else gradient_log[0][4]
-    late_ratio = gradient_log[-1][4]
-    print(f"  early_a/t_grad_ratio: {early_ratio:.3f}")
-    print(f"  late_a/t_grad_ratio:  {late_ratio:.3f}")
 print(f"val_loss:         {val_loss:.6f}")
 print(f"text_bpb:         {text_bpb:.6f}")
 print(f"audio_loss:       {audio_loss:.6f}")
