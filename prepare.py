@@ -254,7 +254,11 @@ def snac_flatten_codes(codes):
 
 
 def prepare_audio_data():
-    """Download LibriSpeech and SNAC-encode to token sequences."""
+    """Download multiple LibriSpeech splits and SNAC-encode to token sequences.
+    Processes one split at a time, removing raw files after encoding to save disk.
+    Training: train-clean-100 + dev-other + test-clean + test-other (~115h)
+    Validation: dev-clean (~5h)
+    """
     os.makedirs(AUDIO_DIR, exist_ok=True)
 
     train_path = os.path.join(AUDIO_DIR, "train_tokens.pt")
@@ -263,11 +267,15 @@ def prepare_audio_data():
     if os.path.exists(train_path) and os.path.exists(val_path):
         train_docs = torch.load(train_path)
         val_docs = torch.load(val_path)
-        print(f"Audio: already encoded — train: {len(train_docs)} docs, val: {len(val_docs)} docs")
+        train_tok = sum(len(d) for d in train_docs)
+        val_tok = sum(len(d) for d in val_docs)
+        print(f"Audio: already encoded — train: {len(train_docs)} docs ({train_tok:,} tok), "
+              f"val: {len(val_docs)} docs ({val_tok:,} tok)")
         return
 
     import torchaudio
     import soundfile as sf
+    import shutil
     from pathlib import Path
 
     # Load SNAC model
@@ -275,7 +283,7 @@ def prepare_audio_data():
     snac_model = snac.SNAC.from_pretrained("hubertsiuzdak/snac_24khz").cuda().eval()
     target_sr = 24000
 
-    def download_librispeech(url, split_dir):
+    def download_and_extract(url, split_dir):
         """Download and extract a LibriSpeech split."""
         tar_path = os.path.join(AUDIO_DIR, os.path.basename(url))
         if os.path.exists(split_dir):
@@ -289,11 +297,9 @@ def prepare_audio_data():
         import tarfile
         with tarfile.open(tar_path, "r:gz") as tar:
             tar.extractall(AUDIO_DIR)
-        # Clean up tar
         os.remove(tar_path)
 
     def find_flac_files(root_dir):
-        """Find all .flac files recursively."""
         return sorted(Path(root_dir).rglob("*.flac"))
 
     def encode_split(split_name, flac_files):
@@ -303,54 +309,67 @@ def prepare_audio_data():
         for i, fpath in enumerate(flac_files):
             waveform, sr = sf.read(str(fpath))
             waveform = torch.tensor(waveform, dtype=torch.float32)
-
-            # Resample to 24kHz for SNAC
             if sr != target_sr:
                 waveform = torchaudio.functional.resample(waveform, sr, target_sr)
-
-            # Skip very short clips (< 1 second) or very long (> 25 seconds for context fit)
             duration = len(waveform) / target_sr
             if duration < 1.0 or duration > 25.0:
                 continue
-
-            # SNAC encode
             with torch.no_grad():
-                waveform_gpu = waveform.unsqueeze(0).unsqueeze(0).cuda()  # (1, 1, samples)
+                waveform_gpu = waveform.unsqueeze(0).unsqueeze(0).cuda()
                 codes = snac_model.encode(waveform_gpu)
-
-            # Flatten to interleaved token sequence
             flat_tokens = snac_flatten_codes(codes)
-
-            # Wrap with audio delimiters
             doc = [AUDIO_START_ID] + flat_tokens + [AUDIO_END_ID]
             docs.append(doc)
             total_seconds += duration
-
-            if (i + 1) % 1000 == 0:
-                print(f"  Encoded {i+1}/{len(flac_files)} clips ({total_seconds/3600:.1f}h), {len(docs)} kept...")
-
+            if (i + 1) % 2000 == 0:
+                print(f"  Encoded {i+1}/{len(flac_files)} clips ({total_seconds/3600:.1f}h)")
         print(f"Audio {split_name}: {len(docs)} docs, {total_seconds/3600:.1f}h, "
               f"avg {sum(len(d) for d in docs)/max(len(docs),1):.0f} tokens/doc")
         return docs
 
-    # Download LibriSpeech splits
     ls_base = "https://www.openslr.org/resources/12"
-    train_dir = os.path.join(AUDIO_DIR, "LibriSpeech", "train-clean-100")
-    val_dir = os.path.join(AUDIO_DIR, "LibriSpeech", "dev-clean")
+    ls_dir = os.path.join(AUDIO_DIR, "LibriSpeech")
 
-    download_librispeech(f"{ls_base}/train-clean-100.tar.gz", train_dir)
-    download_librispeech(f"{ls_base}/dev-clean.tar.gz", val_dir)
+    # Process training splits sequentially, cleaning up after each
+    train_splits = [
+        ("train-clean-100", f"{ls_base}/train-clean-100.tar.gz"),
+        ("dev-other",       f"{ls_base}/dev-other.tar.gz"),
+        ("test-clean",      f"{ls_base}/test-clean.tar.gz"),
+        ("test-other",      f"{ls_base}/test-other.tar.gz"),
+    ]
 
-    train_flacs = find_flac_files(train_dir)
-    val_flacs = find_flac_files(val_dir)
-    print(f"Audio files found: train={len(train_flacs)}, val={len(val_flacs)}")
+    all_train_docs = []
+    for split_name, url in train_splits:
+        split_dir = os.path.join(ls_dir, split_name)
+        print(f"\n--- Processing {split_name} ---")
+        download_and_extract(url, split_dir)
+        flac_files = find_flac_files(split_dir)
+        if flac_files:
+            docs = encode_split(split_name, flac_files)
+            all_train_docs.extend(docs)
+        # Remove raw FLAC files to save disk
+        if os.path.exists(split_dir):
+            shutil.rmtree(split_dir)
 
-    train_docs = encode_split("train", train_flacs)
+    # Validation: dev-clean
+    val_split_dir = os.path.join(ls_dir, "dev-clean")
+    print(f"\n--- Processing dev-clean (validation) ---")
+    download_and_extract(f"{ls_base}/dev-clean.tar.gz", val_split_dir)
+    val_flacs = find_flac_files(val_split_dir)
     val_docs = encode_split("val", val_flacs)
+    if os.path.exists(val_split_dir):
+        shutil.rmtree(val_split_dir)
 
-    torch.save(train_docs, train_path)
+    # Cleanup empty dirs
+    if os.path.exists(ls_dir):
+        shutil.rmtree(ls_dir, ignore_errors=True)
+
+    torch.save(all_train_docs, train_path)
     torch.save(val_docs, val_path)
-    print(f"Audio: saved to {train_path} and {val_path}")
+    train_tok = sum(len(d) for d in all_train_docs)
+    val_tok = sum(len(d) for d in val_docs)
+    print(f"Audio: saved {len(all_train_docs)} train docs ({train_tok:,} tok)")
+    print(f"Audio: saved {len(val_docs)} val docs ({val_tok:,} tok)")
 
     # Cleanup GPU memory
     del snac_model

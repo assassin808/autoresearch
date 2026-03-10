@@ -255,7 +255,7 @@ class GPT(nn.Module):
 
     def setup_optimizer(self, unembedding_lr=0.004, embedding_lr=0.2, matrix_lr=0.02,
                         weight_decay=0.0, adam_betas=(0.8, 0.95), scalar_lr=0.5,
-                        embed_wd_per_row=None):
+                        embed_wd_per_row=None, embed_lr_per_row=None):
         model_dim = self.config.n_embd
         matrix_params = list(self.transformer.h.parameters())
         value_embeds_params = list(self.value_embeds.parameters())
@@ -273,10 +273,13 @@ class GPT(nn.Module):
         embed_group = dict(kind='adamw', params=embedding_params, lr=embedding_lr * dmodel_lr_scale, betas=adam_betas, eps=1e-10, weight_decay=2.0)
         ve_group = dict(kind='adamw', params=value_embeds_params, lr=embedding_lr * dmodel_lr_scale, betas=adam_betas, eps=1e-10, weight_decay=2.0)
         if embed_wd_per_row is not None:
-            # Apply per-row WD to wte, VE, and lm_head (all have vocab_size rows)
             embed_group['wd_per_row'] = embed_wd_per_row
             ve_group['wd_per_row'] = embed_wd_per_row
             lm_head_group['wd_per_row'] = embed_wd_per_row
+        if embed_lr_per_row is not None:
+            embed_group['lr_per_row'] = embed_lr_per_row
+            ve_group['lr_per_row'] = embed_lr_per_row
+            lm_head_group['lr_per_row'] = embed_lr_per_row
         param_groups = [
             lm_head_group,
             embed_group,
@@ -356,6 +359,18 @@ def adamw_step_perrow_wd(p, grad, exp_avg, exp_avg_sq, step_t, lr_t, beta1_t, be
     p.add_(exp_avg / denom, alpha=-step_size)
 
 @torch.compile(dynamic=False, fullgraph=True)
+def adamw_step_perrow_wd_lr(p, grad, exp_avg, exp_avg_sq, step_t, lr_per_row, beta1_t, beta2_t, eps_t, wd_per_row):
+    """AdamW with per-row WD AND per-row LR tensors."""
+    p.mul_(1 - lr_per_row * wd_per_row)
+    exp_avg.lerp_(grad, 1 - beta1_t)
+    exp_avg_sq.lerp_(grad.square(), 1 - beta2_t)
+    bias1 = 1 - beta1_t ** step_t
+    bias2 = 1 - beta2_t ** step_t
+    denom = (exp_avg_sq / bias2).sqrt() + eps_t
+    step_size = lr_per_row / bias1
+    p.add_(exp_avg / denom, alpha=-step_size)
+
+@torch.compile(dynamic=False, fullgraph=True)
 def muon_step_fused(stacked_grads, stacked_params, momentum_buffer, second_momentum_buffer,
                     momentum_t, lr_t, wd_t, beta2_t, ns_steps, red_dim):
     # Nesterov momentum
@@ -429,7 +444,14 @@ class MuonAdamW(torch.optim.Optimizer):
             self._adamw_beta2_t.fill_(group['betas'][1])
             self._adamw_eps_t.fill_(group['eps'])
             wd_per_row = group.get('wd_per_row', None)
-            if wd_per_row is not None:
+            lr_per_row = group.get('lr_per_row', None)
+            if lr_per_row is not None and wd_per_row is not None:
+                # Scale per-row LR by the global LR multiplier
+                lr_scaled = lr_per_row * (group['lr'] / group['initial_lr']) if group.get('initial_lr', 0) > 0 else lr_per_row
+                adamw_step_perrow_wd_lr(p, grad, state['exp_avg'], state['exp_avg_sq'],
+                                       self._adamw_step_t, lr_scaled, self._adamw_beta1_t,
+                                       self._adamw_beta2_t, self._adamw_eps_t, wd_per_row)
+            elif wd_per_row is not None:
                 adamw_step_perrow_wd(p, grad, state['exp_avg'], state['exp_avg_sq'],
                                     self._adamw_step_t, self._adamw_lr_t, self._adamw_beta1_t,
                                     self._adamw_beta2_t, self._adamw_eps_t, wd_per_row)
@@ -493,8 +515,12 @@ ADAM_BETAS = (0.8, 0.95) # Adam beta1, beta2
 WARMUP_RATIO = 0.0      # fraction of time budget for LR warmup
 WARMDOWN_RATIO = 0.7    # fraction of time budget for LR warmdown — was 0.5
 FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
-AUDIO_UPWEIGHT_SCHEDULE = False  # progressively upweight audio loss
-AUDIO_UPWEIGHT_MAX = 1.5       # max audio loss weight at end of training
+# Experiment flags (enable one at a time for testing)
+AUDIO_UPWEIGHT_SCHEDULE = False  # H2: progressively upweight audio loss
+AUDIO_UPWEIGHT_MAX = 1.5       # H2: max audio loss weight at end of training
+GRAD_NORM_BALANCE = False      # H3: balance gradient norms between modalities
+PERROW_LR = False              # H4: per-row adaptive LR for embeddings
+PERROW_LR_ALPHA = 0.3          # H4: exponent for frequency-based LR scaling
 
 # Model size
 DEPTH = 8               # number of transformer layers
@@ -556,6 +582,20 @@ embed_wd_per_row[:AUDIO_START_ID] = EMBED_WD_TEXT
 embed_wd_per_row[AUDIO_START_ID:] = EMBED_WD_AUDIO
 print(f"Per-row WD: text={EMBED_WD_TEXT}, audio={EMBED_WD_AUDIO}")
 
+# H4: Per-row adaptive LR for embeddings
+# Audio tokens are seen less frequently → use higher LR to compensate
+embed_lr_per_row = None
+if PERROW_LR:
+    dmodel_lr_scale = (model.config.n_embd / 768) ** -0.5
+    base_lr = EMBEDDING_LR * dmodel_lr_scale
+    embed_lr_per_row = torch.ones(vocab_size, 1, device=device) * base_lr
+    # Audio rows get scaled LR: lr * (text_count / audio_count)^alpha
+    # With 30% audio ratio and ~60% of vocab being audio:
+    # Each audio token is seen ~(0.3/12288) vs text ~(0.7/8192) → audio ~3.5x less frequent
+    audio_lr_scale = 2.0 ** PERROW_LR_ALPHA  # ~1.23 for alpha=0.3
+    embed_lr_per_row[AUDIO_START_ID:] *= audio_lr_scale
+    print(f"Per-row LR: audio scale={audio_lr_scale:.3f}")
+
 optimizer = model.setup_optimizer(
     unembedding_lr=UNEMBEDDING_LR,
     embedding_lr=EMBEDDING_LR,
@@ -564,6 +604,7 @@ optimizer = model.setup_optimizer(
     matrix_lr=MATRIX_LR,
     weight_decay=WEIGHT_DECAY,
     embed_wd_per_row=embed_wd_per_row,
+    embed_lr_per_row=embed_lr_per_row,
 )
 
 model = torch.compile(model, dynamic=False)
@@ -612,21 +653,37 @@ while True:
         loss.backward()
         x, y, epoch = next(train_loader)
 
-    # Progressive audio upweighting: scale audio-row gradients in embeddings
+    # H2: Progressive audio upweighting
     if AUDIO_UPWEIGHT_SCHEDULE:
         progress_now = min(total_training_time / TIME_BUDGET, 1.0)
-        # Quadratic ramp: weight goes from 1.0 to AUDIO_UPWEIGHT_MAX
         audio_w = 1.0 + (AUDIO_UPWEIGHT_MAX - 1.0) * progress_now ** 2
         with torch.no_grad():
-            # Scale audio rows of embedding gradients
             for name, p in [('wte', model._orig_mod.transformer.wte.weight),
                            ('lm_head', model._orig_mod.lm_head.weight)]:
                 if p.grad is not None:
                     p.grad[AUDIO_START_ID:] *= audio_w
-            # Scale audio rows of VE tables
             for key, ve_embed in model._orig_mod.value_embeds.items():
                 if ve_embed.weight.grad is not None:
                     ve_embed.weight.grad[AUDIO_START_ID:] *= audio_w
+
+    # H3: Gradient norm balancing — equalize per-row gradient norms between modalities
+    if GRAD_NORM_BALANCE:
+        with torch.no_grad():
+            wte_grad = model._orig_mod.transformer.wte.weight.grad
+            if wte_grad is not None:
+                text_norm = wte_grad[:AUDIO_START_ID].float().norm() / (AUDIO_START_ID ** 0.5)
+                audio_norm = wte_grad[AUDIO_START_ID:].float().norm() / ((wte_grad.shape[0] - AUDIO_START_ID) ** 0.5)
+                if audio_norm > 1e-10 and text_norm > 1e-10:
+                    # Scale audio gradients so per-row norm matches text
+                    scale = text_norm / audio_norm
+                    scale = scale.clamp(0.1, 10.0)  # safety clamp
+                    for name, p in [('wte', model._orig_mod.transformer.wte.weight),
+                                   ('lm_head', model._orig_mod.lm_head.weight)]:
+                        if p.grad is not None:
+                            p.grad[AUDIO_START_ID:] *= scale
+                    for key, ve_embed in model._orig_mod.value_embeds.items():
+                        if ve_embed.weight.grad is not None:
+                            ve_embed.weight.grad[AUDIO_START_ID:] *= scale
 
     # Progress and schedules
     progress = min(total_training_time / TIME_BUDGET, 1.0)
