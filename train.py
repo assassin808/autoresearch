@@ -127,7 +127,7 @@ class MLP(nn.Module):
         return x
 
 
-DROPOUT = 0.1  # residual dropout
+DROPOUT = 0.05  # residual dropout
 
 class Block(nn.Module):
     def __init__(self, config, layer_idx):
