@@ -493,6 +493,8 @@ ADAM_BETAS = (0.8, 0.95) # Adam beta1, beta2
 WARMUP_RATIO = 0.0      # fraction of time budget for LR warmup
 WARMDOWN_RATIO = 0.7    # fraction of time budget for LR warmdown — was 0.5
 FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
+AUDIO_UPWEIGHT_SCHEDULE = True  # progressively upweight audio loss
+AUDIO_UPWEIGHT_MAX = 1.5       # max audio loss weight at end of training
 
 # Model size
 DEPTH = 8               # number of transformer layers
@@ -609,6 +611,22 @@ while True:
         loss = loss / grad_accum_steps
         loss.backward()
         x, y, epoch = next(train_loader)
+
+    # Progressive audio upweighting: scale audio-row gradients in embeddings
+    if AUDIO_UPWEIGHT_SCHEDULE:
+        progress_now = min(total_training_time / TIME_BUDGET, 1.0)
+        # Quadratic ramp: weight goes from 1.0 to AUDIO_UPWEIGHT_MAX
+        audio_w = 1.0 + (AUDIO_UPWEIGHT_MAX - 1.0) * progress_now ** 2
+        with torch.no_grad():
+            # Scale audio rows of embedding gradients
+            for name, p in [('wte', model._orig_mod.transformer.wte.weight),
+                           ('lm_head', model._orig_mod.lm_head.weight)]:
+                if p.grad is not None:
+                    p.grad[AUDIO_START_ID:] *= audio_w
+            # Scale audio rows of VE tables
+            for key, ve_embed in model._orig_mod.value_embeds.items():
+                if ve_embed.weight.grad is not None:
+                    ve_embed.weight.grad[AUDIO_START_ID:] *= audio_w
 
     # Progress and schedules
     progress = min(total_training_time / TIME_BUDGET, 1.0)
