@@ -518,7 +518,7 @@ FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
 # Experiment flags (enable one at a time for testing)
 AUDIO_UPWEIGHT_SCHEDULE = False  # H2: progressively upweight audio loss
 AUDIO_UPWEIGHT_MAX = 1.5       # H2: max audio loss weight at end of training
-GRAD_NORM_BALANCE = False      # H3: balance gradient norms between modalities
+GRAD_NORM_BALANCE = True      # H3: balance gradient norms between modalities
 PERROW_LR = False              # H4: per-row adaptive LR for embeddings
 PERROW_LR_ALPHA = 0.3          # H4: exponent for frequency-based LR scaling
 ADADECAY_WD = False            # H5: gradient-magnitude adaptive WD (inspired by AdaDecay)
@@ -613,7 +613,7 @@ optimizer = model.setup_optimizer(
 
 model = torch.compile(model, dynamic=False)
 
-train_loader = make_omni_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train", text_ratio=0.7, audio_ratio=0.0, tts_ratio=0.15, asr_ratio=0.15, cross_modal_weight=1.0)
+train_loader = make_omni_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train", text_ratio=0.5, audio_ratio=0.1, tts_ratio=0.2, asr_ratio=0.2, cross_modal_weight=1.0)
 x, y, epoch, _rw = next(train_loader)  # prefetch first batch
 
 print(f"Time budget: {TIME_BUDGET}s")
@@ -635,7 +635,7 @@ def get_muon_momentum(step):
     return (1 - frac) * 0.85 + frac * 0.95
 
 def get_weight_decay(progress):
-    return WEIGHT_DECAY * get_lr_multiplier(progress)  # coupled WD
+    return WEIGHT_DECAY  # constant WD (was decaying to 0)
 
 # ---------------------------------------------------------------------------
 # Training loop
