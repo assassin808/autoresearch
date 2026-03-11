@@ -365,3 +365,57 @@ single largest improvement found in all experiments.
 | depth=12 AR=40 | 3.858 | worse |
 | Muon momentum=0.90 | 3.802 | slightly worse |
 | Muon WD linear decay | 3.803 | worse than coupled warmdown |
+
+### Combination experiments (sweep9-10)
+
+Best individual changes don't always stack:
+- batch128K + NS10: **3.724** (best pure optimizer change)
+- batch128K + NS10 + MuonWD=0.15: **3.717** (NEW BEST at ratio=0.3)
+- batch128K + NS10 + MuonWD=0.1: 3.725
+- NS15 and NS20 worse than NS10 (diminishing returns, fewer steps)
+
+### Window pattern (sweep8)
+
+| Pattern | val_loss | Description |
+|---------|----------|-------------|
+| **LLLL** | **3.710** | **all full attention — best** |
+| SSLL | 3.720 | more long windows helps |
+| SLSL | 3.722 | alternating |
+| SSSL | 3.717 | original pattern |
+
+At seq_len=2048 with 8 layers, sliding window overhead saves minimal compute
+but hurts quality. Full attention is optimal.
+
+### Audio mix ratio — THE BIGGEST FINDING (sweep8, 11)
+
+| Ratio | val_loss | text_bpb | audio_loss | Verdict |
+|-------|---------|----------|------------|---------|
+| 0.05 | **3.223** | **1.080** | 6.131 | best val_loss, poor audio |
+| 0.10 | 3.232 | 1.083 | 6.133 | nearly as good |
+| 0.15 | 3.399 | 1.089 | 5.803 | good balance |
+| 0.20 | 3.587 | 1.111 | 5.627 | default sweet spot |
+| 0.25 | 3.701 | 1.108 | 5.485 | |
+| 0.30 | 3.710 | 1.110 | 5.497 | original |
+| 0.40 | 4.018 | 1.139 | 5.388 | text degraded |
+| 0.50 | 4.290 | 1.162 | 5.321 | much worse |
+
+**This is the most impactful finding of the entire project.** val_loss improves
+monotonically as audio ratio decreases, because text has ~600M tokens (high
+quality) while audio has ~34M tokens. The model learns text much more
+efficiently per token. At ratio=0.3, 30% of each batch is spent on audio
+tokens that the model can barely learn from (sparse codebook, limited data),
+while starving the text side.
+
+**Implication**: The optimal mix ratio for multi-modal training is NOT about
+"equal representation" but about data quality weighting — modalities with
+more data per token should get more batch fraction. This connects directly to
+our earlier finding that regularization compensates for data scarcity.
+
+### Current best configurations
+
+| Config | val_loss | text_bpb | audio_loss | Use case |
+|--------|---------|----------|------------|----------|
+| ratio=0.05, LLLL, NS10, b128K | 3.223 | 1.080 | 6.131 | text-focused |
+| ratio=0.15, LLLL, NS10, b128K | 3.399 | 1.089 | 5.803 | balanced |
+| ratio=0.2, WD=0.1, LLLL, NS10, b128K | 3.542 | 1.098 | 5.544 | audio-friendly |
+| ratio=0.3, WD=0.15, LLLL, NS10, b128K | 3.710 | 1.110 | 5.497 | original |
