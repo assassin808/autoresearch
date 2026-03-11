@@ -18,7 +18,7 @@ import torch.nn.functional as F
 
 from torch.nn.attention.flex_attention import flex_attention, create_block_mask
 
-from prepare import MAX_SEQ_LEN, TIME_BUDGET, TOTAL_VOCAB_SIZE, AUDIO_START_ID, Tokenizer, make_dataloader, make_omni_dataloader, evaluate_val_loss
+from prepare import MAX_SEQ_LEN, TIME_BUDGET, TOTAL_VOCAB_SIZE, AUDIO_START_ID, Tokenizer, make_dataloader, evaluate_val_loss
 
 # ---------------------------------------------------------------------------
 # GPT Model
@@ -510,10 +510,10 @@ EMBEDDING_LR = 0.8      # learning rate for token embeddings (Adam)
 UNEMBEDDING_LR = 0.004  # learning rate for lm_head (Adam)
 MATRIX_LR = 0.06        # learning rate for matrix parameters (Muon) — was 0.05
 SCALAR_LR = 0.5         # learning rate for per-layer scalars (Adam)
-WEIGHT_DECAY = 0.05     # Muon WD — tuned: 0.5→0.2→0.15 with more data + smaller batch
+WEIGHT_DECAY = 0.05    # Muon WD — tuned: 0.5→0.2→0.1→0.05 (sweep16: less reg with diverse data)
 ADAM_BETAS = (0.8, 0.95) # Adam beta1, beta2
 WARMUP_RATIO = 0.0      # fraction of time budget for LR warmup
-WARMDOWN_RATIO = 0.8    # fraction of time budget for LR warmdown — was 0.5
+WARMDOWN_RATIO = 0.75   # fraction of time budget for LR warmdown — was 0.5→0.7→0.75
 FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
 # Experiment flags (enable one at a time for testing)
 AUDIO_UPWEIGHT_SCHEDULE = False  # H2: progressively upweight audio loss
@@ -613,8 +613,8 @@ optimizer = model.setup_optimizer(
 
 model = torch.compile(model, dynamic=False)
 
-train_loader = make_omni_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train", text_ratio=0.65, audio_ratio=0.0, tts_ratio=0.175, asr_ratio=0.175)
-x, y, epoch, _rw = next(train_loader)  # prefetch first batch
+train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
+x, y, epoch = next(train_loader)  # prefetch first batch
 
 print(f"Time budget: {TIME_BUDGET}s")
 print(f"Gradient accumulation steps: {grad_accum_steps}")
@@ -632,10 +632,10 @@ def get_lr_multiplier(progress):
 
 def get_muon_momentum(step):
     frac = min(step / 300, 1)
-    return (1 - frac) * 0.85 + frac * 0.95
+    return (1 - frac) * 0.85 + frac * 0.97
 
 def get_weight_decay(progress):
-    return WEIGHT_DECAY * get_lr_multiplier(progress)  # coupled WD
+    return WEIGHT_DECAY * get_lr_multiplier(progress)  # coupled WD (sweep16: decays with LR)
 
 # ---------------------------------------------------------------------------
 # Training loop
@@ -655,7 +655,7 @@ while True:
         train_loss = loss.detach()
         loss = loss / grad_accum_steps
         loss.backward()
-        x, y, epoch, _rw = next(train_loader)
+        x, y, epoch = next(train_loader)
 
     # H2: Progressive audio upweighting
     if AUDIO_UPWEIGHT_SCHEDULE:
