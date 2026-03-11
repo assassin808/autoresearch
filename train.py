@@ -527,7 +527,7 @@ MODALITY_REBALANCE = False     # H6: MILES-inspired modality utilization rebalan
 MODALITY_REBALANCE_ALPHA = 0.5 # H6: strength of rebalancing
 
 # Model size
-DEPTH = 8               # number of transformer layers
+DEPTH = 10               # number of transformer layers
 DEVICE_BATCH_SIZE = 16   # per-device batch size (reduce if OOM)
 
 # ---------------------------------------------------------------------------
@@ -613,8 +613,8 @@ optimizer = model.setup_optimizer(
 
 model = torch.compile(model, dynamic=False)
 
-train_loader = make_omni_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train", text_ratio=0.5, audio_ratio=0.1, tts_ratio=0.2, asr_ratio=0.2, cross_modal_weight=0.5)
-x, y, epoch, row_weights = next(train_loader)  # prefetch first batch
+train_loader = make_omni_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train", text_ratio=0.5, audio_ratio=0.1, tts_ratio=0.2, asr_ratio=0.2, cross_modal_weight=1.0)
+x, y, epoch, _rw = next(train_loader)  # prefetch first batch
 
 print(f"Time budget: {TIME_BUDGET}s")
 print(f"Gradient accumulation steps: {grad_accum_steps}")
@@ -651,12 +651,11 @@ while True:
     t0 = time.time()
     for micro_step in range(grad_accum_steps):
         with autocast_ctx:
-            per_sample_loss = model(x, y, reduction='none').view(x.shape[0], -1).mean(dim=1)
-            loss = (per_sample_loss * row_weights).mean()
+            loss = model(x, y)
         train_loss = loss.detach()
         loss = loss / grad_accum_steps
         loss.backward()
-        x, y, epoch, row_weights = next(train_loader)
+        x, y, epoch, _rw = next(train_loader)
 
     # H2: Progressive audio upweighting
     if AUDIO_UPWEIGHT_SCHEDULE:
