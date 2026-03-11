@@ -184,7 +184,7 @@ class GPT(nn.Module):
             torch.nn.init.zeros_(block.mlp.c_proj.weight)
         # Per-layer scalars
         self.resid_lambdas.fill_(1.0)
-        self.x0_lambdas.fill_(0.05)
+        self.x0_lambdas.fill_(0.1)
         # Value embeddings
         for ve in self.value_embeds.values():
             torch.nn.init.uniform_(ve.weight, -s, s)
@@ -506,7 +506,7 @@ WINDOW_PATTERN = "SSSL" # sliding window pattern: L=full, S=half context
 
 # Optimization
 TOTAL_BATCH_SIZE = 2**17 # ~262K tokens per optimizer step (less grad accum = more steps)
-EMBEDDING_LR = 0.6      # learning rate for token embeddings (Adam)
+EMBEDDING_LR = 0.8      # learning rate for token embeddings (Adam)
 UNEMBEDDING_LR = 0.004  # learning rate for lm_head (Adam)
 MATRIX_LR = 0.06        # learning rate for matrix parameters (Muon) — was 0.05
 SCALAR_LR = 0.5         # learning rate for per-layer scalars (Adam)
@@ -584,7 +584,14 @@ EMBED_WD_AUDIO = 0.0      # WD for audio embeddings (0.0 optimal with 115h data)
 embed_wd_per_row = torch.ones(vocab_size, 1, device=device)
 embed_wd_per_row[:AUDIO_START_ID] = EMBED_WD_TEXT
 embed_wd_per_row[AUDIO_START_ID:] = EMBED_WD_AUDIO
-print(f"Per-row WD: text={EMBED_WD_TEXT}, audio={EMBED_WD_AUDIO}")
+# H1: Frequency-proportional WD = C / sqrt(token_freq)
+import math
+FREQ_WD_C = 0.5
+text_est_freq = 8260.0
+audio_est_freq = 2360.0
+embed_wd_per_row[:AUDIO_START_ID] = FREQ_WD_C / math.sqrt(text_est_freq)
+embed_wd_per_row[AUDIO_START_ID:] = FREQ_WD_C / math.sqrt(audio_est_freq)
+print(f"H1: Freq-proportional WD: text={embed_wd_per_row[0].item():.4f}, audio={embed_wd_per_row[AUDIO_START_ID].item():.4f}")
 
 # H4: Per-row adaptive LR for embeddings
 # Audio tokens are seen less frequently → use higher LR to compensate
