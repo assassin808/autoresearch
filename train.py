@@ -580,11 +580,25 @@ grad_accum_steps = TOTAL_BATCH_SIZE // tokens_per_fwdbwd
 # Text tokens (0..AUDIO_START_ID-1): low WD (frequently updated, need rich representations)
 # Audio tokens (AUDIO_START_ID..vocab_size-1): high WD (rare, need regularization)
 EMBED_WD_TEXT = 0.0       # WD for text embeddings (lower = less regularization)
-EMBED_WD_AUDIO = 0.5  # H3: test lazy WD with moderate WD      # WD for audio embeddings (0.0 optimal with 115h data)
+EMBED_WD_AUDIO = 0.0      # WD for audio embeddings (0.0 optimal with 115h data)
 embed_wd_per_row = torch.ones(vocab_size, 1, device=device)
 embed_wd_per_row[:AUDIO_START_ID] = EMBED_WD_TEXT
 embed_wd_per_row[AUDIO_START_ID:] = EMBED_WD_AUDIO
-print(f"Per-row WD: text={EMBED_WD_TEXT}, audio={EMBED_WD_AUDIO}")
+# H1: Frequency-proportional WD = C / sqrt(token_freq)
+# Rough frequency estimates: text tokens avg ~75 occurrences per batch,
+# audio tokens avg ~8 occurrences per batch (30% audio, 12K tokens vs 8K text)
+# We'll compute actual frequencies from the first few batches
+FREQ_WD_C = 0.5  # sweep this
+import math
+# Estimate: text tokens seen ~8x more than audio tokens per step
+# With ~370 steps, text token i seen ~370 * 262K * 0.7 / 8192 ≈ 8260 times
+# Audio token i seen ~370 * 262K * 0.3 / 12288 ≈ 2360 times
+# WD_i = C / sqrt(freq_i) → text WD ~ C/91 ~ 0.005, audio WD ~ C/49 ~ 0.01
+text_est_freq = 8260.0
+audio_est_freq = 2360.0
+embed_wd_per_row[:AUDIO_START_ID] = FREQ_WD_C / math.sqrt(text_est_freq)
+embed_wd_per_row[AUDIO_START_ID:] = FREQ_WD_C / math.sqrt(audio_est_freq)
+print(f"H1: Freq-proportional WD: text={embed_wd_per_row[0].item():.4f}, audio={embed_wd_per_row[AUDIO_START_ID].item():.4f}")
 
 # H4: Per-row adaptive LR for embeddings
 # Audio tokens are seen less frequently → use higher LR to compensate
@@ -611,7 +625,6 @@ optimizer = model.setup_optimizer(
     embed_lr_per_row=embed_lr_per_row,
 )
 
-model._lazy_wd_mask = torch.ones(vocab_size, 1, device="cuda")
 model = torch.compile(model, dynamic=False)
 
 train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
@@ -657,12 +670,6 @@ while True:
         loss = loss / grad_accum_steps
         loss.backward()
         x, y, epoch = next(train_loader)
-        # H3: Track tokens in batch for lazy WD
-        if hasattr(model, '_lazy_wd_mask'):
-            batch_tokens = torch.cat([x.reshape(-1), y.reshape(-1)]).unique()
-            lazy_mask = torch.zeros(vocab_size, 1, device="cuda")
-            lazy_mask[batch_tokens] = 1.0
-            model._lazy_wd_mask = lazy_mask
 
     # H2: Progressive audio upweighting
     if AUDIO_UPWEIGHT_SCHEDULE:
@@ -757,12 +764,6 @@ while True:
         if group['kind'] == 'muon':
             group["momentum"] = muon_momentum
             group["weight_decay"] = muon_weight_decay
-    # H3: Lazy WD — only decay rows that were updated
-    if hasattr(model._orig_mod, '_lazy_wd_mask'):
-        lazy_mask = model._orig_mod._lazy_wd_mask
-        for group in optimizer.param_groups:
-            if group.get('wd_per_row') is not None:
-                group['wd_per_row'] = embed_wd_per_row * lazy_mask
     optimizer.step()
     model.zero_grad(set_to_none=True)
 
