@@ -588,11 +588,7 @@ print(f"Per-row WD: text={EMBED_WD_TEXT}, audio={EMBED_WD_AUDIO}")
 
 # H4: Per-row adaptive LR for embeddings
 # Audio tokens are seen less frequently → use higher LR to compensate
-dmodel_lr_scale_tmp = (model.config.n_embd / 768) ** -0.5
-embed_lr_per_row = torch.ones(vocab_size, 1, device=device) * EMBEDDING_LR * dmodel_lr_scale_tmp
-embed_lr_per_row[AUDIO_START_ID:] *= 0.5  # half LR for audio
-print(f"Audio embed LR scaled to 0.5x")
-# embed_lr_per_row = None  # disabled
+embed_lr_per_row = None
 if PERROW_LR:
     dmodel_lr_scale = (model.config.n_embd / 768) ** -0.5
     base_lr = EMBEDDING_LR * dmodel_lr_scale
@@ -639,7 +635,7 @@ def get_muon_momentum(step):
     return (1 - frac) * 0.85 + frac * 0.95
 
 def get_weight_decay(progress):
-    return WEIGHT_DECAY  # constant WD (was decaying to 0)
+    return WEIGHT_DECAY * get_lr_multiplier(progress)  # coupled WD
 
 # ---------------------------------------------------------------------------
 # Training loop
