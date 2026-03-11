@@ -588,7 +588,7 @@ embed_wd_per_row[AUDIO_START_ID:] = EMBED_WD_AUDIO
 # Rough frequency estimates: text tokens avg ~75 occurrences per batch,
 # audio tokens avg ~8 occurrences per batch (30% audio, 12K tokens vs 8K text)
 # We'll compute actual frequencies from the first few batches
-FREQ_WD_C = 0.5  # sweep this
+FREQ_WD_C = 1.0  # sweep this
 import math
 # Estimate: text tokens seen ~8x more than audio tokens per step
 # With ~370 steps, text token i seen ~370 * 262K * 0.7 / 8192 ≈ 8260 times
