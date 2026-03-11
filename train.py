@@ -505,7 +505,7 @@ HEAD_DIM = 128          # target head dimension for attention
 WINDOW_PATTERN = "LLLL" # all full attention — sliding window not needed at 2048 seq_len
 
 # Optimization
-TOTAL_BATCH_SIZE = 2**17 # ~128K tokens per optimizer step (more steps > gradient quality)
+TOTAL_BATCH_SIZE = 2**16 # ~128K tokens per optimizer step (more steps > gradient quality)
 EMBEDDING_LR = 0.8      # learning rate for token embeddings (Adam)
 UNEMBEDDING_LR = 0.004  # learning rate for lm_head (Adam)
 MATRIX_LR = 0.06        # learning rate for matrix parameters (Muon) — was 0.05
@@ -635,7 +635,7 @@ def get_muon_momentum(step):
     return (1 - frac) * 0.85 + frac * 0.95
 
 def get_weight_decay(progress):
-    return WEIGHT_DECAY * get_lr_multiplier(progress)  # coupled WD
+    return WEIGHT_DECAY  # constant WD (was decaying to 0)
 
 # ---------------------------------------------------------------------------
 # Training loop
