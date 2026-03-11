@@ -183,10 +183,10 @@ experiments = [
 
     # Higher Muon WD (since WD=0.2 is current best, try 0.25, 0.3)
     ("Muon WD=0.25", [
-        ("WEIGHT_DECAY = 0.2", "WEIGHT_DECAY = 0.25"),
+        ("WEIGHT_DECAY = 0.15", "WEIGHT_DECAY = 0.25"),
     ], None),
     ("Muon WD=0.3", [
-        ("WEIGHT_DECAY = 0.2", "WEIGHT_DECAY = 0.3"),
+        ("WEIGHT_DECAY = 0.15", "WEIGHT_DECAY = 0.3"),
     ], None),
 
     # Scalar LR experiments
