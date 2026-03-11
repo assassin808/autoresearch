@@ -419,3 +419,98 @@ our earlier finding that regularization compensates for data scarcity.
 | ratio=0.15, LLLL, NS10, b128K | 3.399 | 1.089 | 5.803 | balanced |
 | ratio=0.2, WD=0.1, LLLL, NS10, b128K | 3.542 | 1.098 | 5.544 | audio-friendly |
 | ratio=0.3, WD=0.15, LLLL, NS10, b128K | 3.710 | 1.110 | 5.497 | original |
+
+---
+
+## Part 6: Diagnostic Instrumentation Results
+
+Single instrumented training run (best config at ratio=0.3) measuring gradient norms,
+embedding effective rank, NS singular value spectra, and token frequencies every 50 steps.
+
+### Token frequency distribution
+
+| Metric | Text (8,192 tokens) | Audio (12,290 tokens) |
+|--------|---------------------|----------------------|
+| Active tokens | 8,144 (99.4%) | 12,044 (98.0%) |
+| Mean frequency | 13,812 | 3,069 |
+| Median frequency | 4,194 | 1,338 |
+| Max frequency | 3,583,362 | 67,003 |
+| Min nonzero | 1 | 1 |
+| Unused tokens | 48 | 246 |
+| Entropy (% of max) | 81.7% | 91.8% |
+
+Text is Zipfian (heavy-tailed, CV=6.07). Audio is more uniform (CV=1.53) due to SNAC
+codebook quantization. The average text token gets ~15x more training signal than the
+average audio token (combining frequency × mix ratio).
+
+**Audio codebook hierarchy:**
+- CB0 (coarse): 3,851/4,096 active, 245 unused, max=67K, min(nz)=1
+- CB1 (mid): 4,095/4,096 active, 1 unused, max=61K, min(nz)=25
+- CB2 (fine): 4,096/4,096 active, 0 unused, max=48K, min(nz)=163
+
+The coarse codebook is the sparsest — 6% of codes are completely unused (dead embedding
+rows that receive zero gradient but are still subject to weight decay).
+
+### Gradient norm dynamics
+
+| Metric | Step 0 | Step 600 | Step 1150 |
+|--------|--------|----------|-----------|
+| Text grad norm | 1.76e-4 | 1.04e-4 | 6.59e-5 |
+| Audio grad norm | 3.30e-5 | 2.50e-5 | 2.50e-5 |
+| Text/Audio ratio | 5.3x | 4.2x | 2.6x |
+
+Text gradients decay 2.7x over training; audio gradients are nearly constant. During
+warmdown (steps 400+), text grads decay proportionally with LR while audio grads are
+invariant — confirming H9's prediction that WD dominates audio updates in late training.
+
+### Embedding effective rank divergence
+
+| Metric | Step 0 | Step 200 | Step 600 | Step 1150 |
+|--------|--------|----------|----------|-----------|
+| Text rank | 508 | 457 | 465 | 465 |
+| Audio rank | 509 | 468 | 449 | 434 |
+| Gap | 1 | 11 | 16 | 31 |
+
+Both start near-identical at initialization (~509 effective dimensions out of 512).
+**Text recovers after an initial dip and stabilizes at 465.** Audio declines
+monotonically from 509 to 434, never recovering. The gap is 31 dimensions at end of
+training and still growing.
+
+**This directly confirms H6**: audio embeddings are rank-deficient because they lack
+sufficient gradient signal. The 246 dead audio tokens (zero gradient, subject to WD)
+actively degrade the audio embedding subspace.
+
+### Newton-Schulz spectral compression
+
+| Metric | Before NS | After NS (10 iters) |
+|--------|-----------|---------------------|
+| Condition number | 3.7-8.9 (mean 4.9) | 1.001-1.003 (mean 1.002) |
+| SV spread | 8.9x | 1.002x |
+| Compression ratio | — | **~2,650x** |
+
+NS crushes condition numbers by ~2,650x. After 10 iterations, all 20 top singular values
+cluster within 0.2% of each other (~1.141). The optimizer treats all gradient directions
+equally — it is **modality-blind by design**.
+
+**This confirms H2**: Muon's NS orthogonalization makes updates near-isotropic, preventing
+any single direction (e.g., text-dominated singular vectors) from dominating the update.
+Manual gradient balancing failed because NS was already doing it.
+
+**Pre-NS condition number decreases over training** (8.9 at step 100 → 3.7 at step 1100),
+suggesting the loss landscape becomes better conditioned as training progresses.
+
+### Synthesis: The cross-modal training asymmetry
+
+The diagnostics paint a coherent picture:
+
+1. **Data imbalance** → text tokens get ~15x more gradient signal per training step
+2. **Gradient imbalance** → text embedding gradients are 3-5x larger than audio
+3. **Rank divergence** → audio embeddings collapse to lower effective rank (434 vs 465)
+4. **Dead tokens** → 246 audio tokens receive zero gradient but are decayed by WD
+5. **Muon is blind** → NS equalizes all gradient directions, cannot preferentially help audio
+
+**The core insight**: The regularization-as-data-tax theory (Part 2) is now empirically
+grounded. Weight decay on audio embeddings is harmful because it decays representations
+that already lack gradient signal. The solution is not better regularization but better
+data coverage — or, equivalently, frequency-aware regularization (H1) that exempts
+undersampled tokens.

@@ -1,0 +1,170 @@
+[
+  {
+    "step": 0,
+    "text_eff_rank": 507.89666683060017,
+    "audio_eff_rank": 509.29307845788884,
+    "text_norm": 2047.364013671875,
+    "audio_norm": 2508.6865234375
+  },
+  {
+    "step": 50,
+    "text_eff_rank": 439.8741766045353,
+    "audio_eff_rank": 471.96673769419255,
+    "text_norm": 14818.80078125,
+    "audio_norm": 16588.41015625
+  },
+  {
+    "step": 100,
+    "text_eff_rank": 448.78568085815135,
+    "audio_eff_rank": 467.04705630760395,
+    "text_norm": 20224.92578125,
+    "audio_norm": 21601.291015625
+  },
+  {
+    "step": 150,
+    "text_eff_rank": 455.46757979552433,
+    "audio_eff_rank": 461.54240573089004,
+    "text_norm": 24342.0390625,
+    "audio_norm": 26042.59375
+  },
+  {
+    "step": 200,
+    "text_eff_rank": 459.3144230039337,
+    "audio_eff_rank": 457.2493573652807,
+    "text_norm": 28097.974609375,
+    "audio_norm": 30606.865234375
+  },
+  {
+    "step": 250,
+    "text_eff_rank": 461.46208331323726,
+    "audio_eff_rank": 454.285464407495,
+    "text_norm": 31523.27734375,
+    "audio_norm": 34753.53125
+  },
+  {
+    "step": 300,
+    "text_eff_rank": 462.79239232667743,
+    "audio_eff_rank": 451.9422823178717,
+    "text_norm": 34668.68359375,
+    "audio_norm": 38451.94140625
+  },
+  {
+    "step": 350,
+    "text_eff_rank": 463.6556005510814,
+    "audio_eff_rank": 450.0210747836349,
+    "text_norm": 37654.66796875,
+    "audio_norm": 41918.0078125
+  },
+  {
+    "step": 400,
+    "text_eff_rank": 464.16703837817755,
+    "audio_eff_rank": 448.20398445568924,
+    "text_norm": 40317.8828125,
+    "audio_norm": 44977.0859375
+  },
+  {
+    "step": 450,
+    "text_eff_rank": 464.452866076597,
+    "audio_eff_rank": 446.3899740289855,
+    "text_norm": 42520.41796875,
+    "audio_norm": 47479.0234375
+  },
+  {
+    "step": 500,
+    "text_eff_rank": 464.593519794239,
+    "audio_eff_rank": 444.6257062139641,
+    "text_norm": 44376.13671875,
+    "audio_norm": 49588.34765625
+  },
+  {
+    "step": 550,
+    "text_eff_rank": 464.74418832851467,
+    "audio_eff_rank": 442.9362040385033,
+    "text_norm": 45913.015625,
+    "audio_norm": 51350.40234375
+  },
+  {
+    "step": 600,
+    "text_eff_rank": 464.76657120459964,
+    "audio_eff_rank": 441.25585696936866,
+    "text_norm": 47184.80078125,
+    "audio_norm": 52810.1015625
+  },
+  {
+    "step": 650,
+    "text_eff_rank": 464.76479826421297,
+    "audio_eff_rank": 439.7162644467623,
+    "text_norm": 48236.11328125,
+    "audio_norm": 54002.27734375
+  },
+  {
+    "step": 700,
+    "text_eff_rank": 464.75992271302226,
+    "audio_eff_rank": 438.3761933744365,
+    "text_norm": 49083.78125,
+    "audio_norm": 54944.55859375
+  },
+  {
+    "step": 750,
+    "text_eff_rank": 464.7406426252716,
+    "audio_eff_rank": 437.16255244428964,
+    "text_norm": 49748.83203125,
+    "audio_norm": 55685.58203125
+  },
+  {
+    "step": 800,
+    "text_eff_rank": 464.6927782790683,
+    "audio_eff_rank": 436.1154864345329,
+    "text_norm": 50249.3828125,
+    "audio_norm": 56241.8828125
+  },
+  {
+    "step": 850,
+    "text_eff_rank": 464.68657400253915,
+    "audio_eff_rank": 435.2344359047519,
+    "text_norm": 50617.0546875,
+    "audio_norm": 56648.1875
+  },
+  {
+    "step": 900,
+    "text_eff_rank": 464.6985394671608,
+    "audio_eff_rank": 434.5480337324629,
+    "text_norm": 50873.93359375,
+    "audio_norm": 56928.88671875
+  },
+  {
+    "step": 950,
+    "text_eff_rank": 464.6743872719476,
+    "audio_eff_rank": 434.12884574142043,
+    "text_norm": 51031.4609375,
+    "audio_norm": 57100.046875
+  },
+  {
+    "step": 1000,
+    "text_eff_rank": 464.6648596870091,
+    "audio_eff_rank": 434.0208006132996,
+    "text_norm": 51112.83203125,
+    "audio_norm": 57190.22265625
+  },
+  {
+    "step": 1050,
+    "text_eff_rank": 464.6653028261628,
+    "audio_eff_rank": 433.9583040252727,
+    "text_norm": 51142.2890625,
+    "audio_norm": 57221.953125
+  },
+  {
+    "step": 1100,
+    "text_eff_rank": 464.65909891646805,
+    "audio_eff_rank": 433.9301628053116,
+    "text_norm": 51147.91796875,
+    "audio_norm": 57227.3359375
+  },
+  {
+    "step": 1150,
+    "text_eff_rank": 464.6599851842103,
+    "audio_eff_rank": 433.9260245445306,
+    "text_norm": 51148.20703125,
+    "audio_norm": 57227.703125
+  }
+]

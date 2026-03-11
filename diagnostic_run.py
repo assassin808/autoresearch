@@ -8,135 +8,77 @@ Single training run with extra logging to measure:
 
 Saves diagnostics to diagnostic_results/ directory.
 """
-import os
-os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
-os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+import os, subprocess, sys
 
-import gc
-import time
-import json
-import math
-from dataclasses import dataclass, asdict
+os.makedirs("diagnostic_results", exist_ok=True)
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.nn.attention.flex_attention import flex_attention, create_block_mask
-
-from prepare import MAX_SEQ_LEN, TIME_BUDGET, TOTAL_VOCAB_SIZE, AUDIO_START_ID, Tokenizer, make_dataloader, evaluate_val_loss
-
-# Import the model and optimizer from train.py (we'll copy the essential bits)
-# Actually, let's just patch train.py to add diagnostics
-
-import subprocess, re, sys
-
-# We'll modify train.py to add diagnostic logging and run it
 with open("train.py") as f:
     original = f.read()
 
-# Create diagnostics directory
-os.makedirs("diagnostic_results", exist_ok=True)
+# Patch 1: Add diagnostic imports and state after model compilation
+patch1_target = 'model = torch.compile(model, dynamic=False)'
+patch1_replace = '''model = torch.compile(model, dynamic=False)
 
-# Add diagnostic code: log every 50 steps
-diagnostic_code = '''
 # ===== DIAGNOSTIC INSTRUMENTATION =====
-import json, math
-os.makedirs("diagnostic_results", exist_ok=True)
-diag_token_freq = torch.zeros(vocab_size, dtype=torch.long, device="cuda")
-diag_grad_norms = []  # per-step: {step, text_grad_norm, audio_grad_norm, ...}
-diag_ns_spectra = []  # sampled NS before/after spectra
-diag_embed_ranks = []  # effective rank of embedding submatrices
+import json as _json
+diag_token_freq = torch.zeros(TOTAL_VOCAB_SIZE, dtype=torch.long, device="cuda")
+diag_grad_norms = []
+diag_ns_spectra = []
+diag_embed_ranks = []
 DIAG_LOG_INTERVAL = 50
 '''
 
-# Insert after model compilation
-modified = original.replace(
-    'model = torch.compile(model, dynamic=False)',
-    'model = torch.compile(model, dynamic=False)\n' + diagnostic_code
-)
-
-# Add token frequency counting in the training loop
-token_count_code = '''
+# Patch 2: Count token frequencies inside training loop (specific indented line)
+patch2_target = '        x, y, epoch = next(train_loader)\n\n    # H2: Progressive audio upweighting'
+patch2_replace = '''        x, y, epoch = next(train_loader)
         # DIAGNOSTIC: count token frequencies
         diag_token_freq.scatter_add_(0, x.reshape(-1), torch.ones(x.numel(), dtype=torch.long, device="cuda"))
-'''
 
-modified = modified.replace(
-    '        x, y, epoch = next(train_loader)',
-    '        x, y, epoch = next(train_loader)\n' + token_count_code
-)
+    # H2: Progressive audio upweighting'''
 
-# Add gradient diagnostics after loss.backward() but before optimizer.step()
-grad_diag_code = '''
-    # DIAGNOSTIC: per-modality gradient norms
+# Patch 3: Add gradient/embedding diagnostics + NS spectrum before optimizer.step()
+patch3_target = '    optimizer.step()\n    model.zero_grad(set_to_none=True)'
+patch3_replace = '''    # DIAGNOSTIC: per-modality gradient norms
     if step % DIAG_LOG_INTERVAL == 0:
         with torch.no_grad():
             wte_grad = model._orig_mod.transformer.wte.weight.grad
             if wte_grad is not None:
                 text_grad = wte_grad[:AUDIO_START_ID].float()
                 audio_grad = wte_grad[AUDIO_START_ID:].float()
-                # Per-row gradient norms
                 text_row_norms = text_grad.norm(dim=1)
                 audio_row_norms = audio_grad.norm(dim=1)
                 diag_grad_norms.append({
-                    "step": step,
-                    "progress": progress,
+                    "step": step, "progress": progress,
                     "text_grad_norm": text_grad.norm().item(),
                     "audio_grad_norm": audio_grad.norm().item(),
                     "text_grad_mean_row": text_row_norms.mean().item(),
                     "audio_grad_mean_row": audio_row_norms.mean().item(),
-                    "text_grad_median_row": text_row_norms.median().item(),
-                    "audio_grad_median_row": audio_row_norms.median().item(),
                     "text_grad_max_row": text_row_norms.max().item(),
                     "audio_grad_max_row": audio_row_norms.max().item(),
-                    "lrm": lrm,
-                    "muon_wd": muon_weight_decay,
+                    "lrm": lrm, "muon_wd": muon_weight_decay,
                 })
-
             # Embedding effective rank (H6)
             wte = model._orig_mod.transformer.wte.weight
             text_emb = wte[:AUDIO_START_ID].float()
             audio_emb = wte[AUDIO_START_ID:].float()
-
-            # Effective rank = exp(entropy of normalized singular values)
-            def effective_rank(mat):
+            def _eff_rank(mat):
+                import math as _m
                 s = torch.linalg.svdvals(mat)
                 s = s / s.sum()
-                s = s[s > 1e-10]  # avoid log(0)
-                entropy = -(s * s.log()).sum().item()
-                return math.exp(entropy)
-
-            text_rank = effective_rank(text_emb)
-            audio_rank = effective_rank(audio_emb)
+                s = s[s > 1e-10]
+                return _m.exp(-(s * s.log()).sum().item())
             diag_embed_ranks.append({
-                "step": step,
-                "text_eff_rank": text_rank,
-                "audio_eff_rank": audio_rank,
-                "text_norm": text_emb.norm().item(),
-                "audio_norm": audio_emb.norm().item(),
+                "step": step, "text_eff_rank": _eff_rank(text_emb),
+                "audio_eff_rank": _eff_rank(audio_emb),
+                "text_norm": text_emb.norm().item(), "audio_norm": audio_emb.norm().item(),
             })
-'''
-
-# Insert the gradient diagnostics before the optimizer.step() call
-modified = modified.replace(
-    '    optimizer.step()',
-    grad_diag_code + '\n    optimizer.step()'
-)
-
-# Add NS spectrum logging inside the Muon step (sample occasionally)
-# We'll add it by modifying the muon_step_fused function — actually that's compiled,
-# so let's just measure the raw gradient singular values outside the fused function
-ns_diag_code = '''
     # DIAGNOSTIC: NS spectrum analysis (every 100 steps)
     if step % 100 == 0:
         with torch.no_grad():
-            # Get gradient of first transformer layer's Q projection
             q_weight = model._orig_mod.transformer.h[0].attn.c_q.weight
             if q_weight.grad is not None:
                 g = q_weight.grad.float()
-                sv_before = torch.linalg.svdvals(g).cpu().tolist()[:20]  # top 20 SVs
-
-                # Simulate NS: G @ (G^T G)^{-1/2} approximation
+                sv_before = torch.linalg.svdvals(g).cpu().tolist()[:20]
                 X = g / (g.norm() * 1.02 + 1e-6)
                 for a, b, c in [(8.156554524902461, -22.48329292557795, 15.878769915207462),
                                 (4.042929935166739, -2.808917465908714, 0.5000178451051316),
@@ -147,25 +89,17 @@ ns_diag_code = '''
                     B = b * A + c * (A @ A)
                     X = a * X + X @ B
                 sv_after = torch.linalg.svdvals(X.float()).cpu().tolist()[:20]
-
                 diag_ns_spectra.append({
-                    "step": step,
-                    "layer": 0,
-                    "sv_before": sv_before,
-                    "sv_after": sv_after,
-                    "sv_ratio": max(sv_before) / (min(sv_before[:10]) + 1e-10),  # condition number proxy
+                    "step": step, "layer": 0,
+                    "sv_before": sv_before, "sv_after": sv_after,
+                    "sv_ratio": max(sv_before) / (min(sv_before[:10]) + 1e-10),
                 })
-'''
+    optimizer.step()
+    model.zero_grad(set_to_none=True)'''
 
-modified = modified.replace(
-    '    optimizer.step()',
-    ns_diag_code + '\n    optimizer.step()'
-)
-
-# Add final diagnostic save
-save_diag_code = '''
-# ===== SAVE DIAGNOSTICS =====
-# Per-token frequencies
+# Patch 4: Save diagnostics at the end
+patch4_target = 'print("---")'
+patch4_replace = '''# ===== SAVE DIAGNOSTICS =====
 freq_data = {
     "text_freq": diag_token_freq[:AUDIO_START_ID].cpu().tolist(),
     "audio_freq": diag_token_freq[AUDIO_START_ID:].cpu().tolist(),
@@ -173,29 +107,32 @@ freq_data = {
     "audio_total": diag_token_freq[AUDIO_START_ID:].sum().item(),
 }
 with open("diagnostic_results/token_frequencies.json", "w") as f:
-    json.dump(freq_data, f)
-
-# Gradient norms over training
+    _json.dump(freq_data, f)
 with open("diagnostic_results/gradient_norms.json", "w") as f:
-    json.dump(diag_grad_norms, f, indent=2)
-
-# NS spectra
+    _json.dump(diag_grad_norms, f, indent=2)
 with open("diagnostic_results/ns_spectra.json", "w") as f:
-    json.dump(diag_ns_spectra, f, indent=2)
-
-# Embedding effective ranks
+    _json.dump(diag_ns_spectra, f, indent=2)
 with open("diagnostic_results/embed_ranks.json", "w") as f:
-    json.dump(diag_embed_ranks, f, indent=2)
-
+    _json.dump(diag_embed_ranks, f, indent=2)
 print("Diagnostics saved to diagnostic_results/")
-'''
+print("---")'''
 
-modified = modified.replace(
-    'print("---")',
-    save_diag_code + '\nprint("---")'
-)
+# Apply patches
+modified = original
+patches = [
+    (patch1_target, patch1_replace, "compile+diag_init"),
+    (patch2_target, patch2_replace, "token_freq"),
+    (patch3_target, patch3_replace, "grad+embed+ns"),
+    (patch4_target, patch4_replace, "save_diag"),
+]
 
-# Write modified version and run
+for target, replace, name in patches:
+    if target not in modified:
+        print(f"PATCH FAILED: {name} — target string not found!")
+        sys.exit(1)
+    modified = modified.replace(target, replace, 1)
+    print(f"Patch applied: {name}")
+
 with open("train_diagnostic.py", "w") as f:
     f.write(modified)
 
