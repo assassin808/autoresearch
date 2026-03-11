@@ -510,7 +510,7 @@ EMBEDDING_LR = 0.8      # learning rate for token embeddings (Adam)
 UNEMBEDDING_LR = 0.004  # learning rate for lm_head (Adam)
 MATRIX_LR = 0.06        # learning rate for matrix parameters (Muon) — was 0.05
 SCALAR_LR = 0.5         # learning rate for per-layer scalars (Adam)
-WEIGHT_DECAY = 0.1    # Muon WD — tuned: 0.5→0.2→0.1→0.05 (sweep16: less reg with diverse data)
+WEIGHT_DECAY = 0.05    # Muon WD — tuned: 0.5→0.2→0.1→0.05 (sweep16: less reg with diverse data)
 ADAM_BETAS = (0.8, 0.95) # Adam beta1, beta2
 WARMUP_RATIO = 0.0      # fraction of time budget for LR warmup
 WARMDOWN_RATIO = 0.75   # fraction of time budget for LR warmdown — was 0.5→0.7→0.75
@@ -535,8 +535,8 @@ DEVICE_BATCH_SIZE = 16   # per-device batch size (reduce if OOM)
 # ---------------------------------------------------------------------------
 
 t_start = time.time()
-torch.manual_seed(2024)
-torch.cuda.manual_seed(2024)
+torch.manual_seed(42)
+torch.cuda.manual_seed(42)
 torch.set_float32_matmul_precision("high")
 device = torch.device("cuda")
 autocast_ctx = torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
