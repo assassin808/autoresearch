@@ -152,7 +152,6 @@ class GPT(nn.Module):
             "h": nn.ModuleList([Block(config, i) for i in range(config.n_layer)]),
         })
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
-        self.lm_head.weight = self.transformer.wte.weight  # weight tying
         self.resid_lambdas = nn.Parameter(torch.ones(config.n_layer))
         self.x0_lambdas = nn.Parameter(torch.zeros(config.n_layer))
         # Value embeddings
@@ -172,8 +171,7 @@ class GPT(nn.Module):
     def init_weights(self):
         # Embedding and unembedding
         torch.nn.init.normal_(self.transformer.wte.weight, mean=0.0, std=1.0)
-        if self.lm_head.weight is not self.transformer.wte.weight:
-            torch.nn.init.normal_(self.lm_head.weight, mean=0.0, std=0.001)
+        torch.nn.init.normal_(self.lm_head.weight, mean=0.0, std=0.001)
         # Transformer blocks
         n_embd = self.config.n_embd
         s = 3**0.5 * n_embd**-0.5
@@ -262,37 +260,33 @@ class GPT(nn.Module):
         matrix_params = list(self.transformer.h.parameters())
         value_embeds_params = list(self.value_embeds.parameters())
         embedding_params = list(self.transformer.wte.parameters())
-        if self.lm_head.weight is self.transformer.wte.weight:
-            lm_head_params = []
-        else:
-            lm_head_params = list(self.lm_head.parameters())
+        lm_head_params = list(self.lm_head.parameters())
         resid_params = [self.resid_lambdas]
         x0_params = [self.x0_lambdas]
-        all_ids = set(id(p) for p in self.parameters())
-        grp_ids = set(id(p) for p in matrix_params + embedding_params + lm_head_params + value_embeds_params + resid_params + x0_params)
-        assert all_ids == grp_ids, f'param mismatch: {len(all_ids)} vs {len(grp_ids)}'
+        assert len(list(self.parameters())) == (len(matrix_params) + len(embedding_params) +
+            len(lm_head_params) + len(value_embeds_params) + len(resid_params) + len(x0_params))
         # Scale LR ∝ 1/√dmodel (tuned at 768 dim)
         dmodel_lr_scale = (model_dim / 768) ** -0.5
         print(f"Scaling AdamW LRs by 1/sqrt({model_dim}/768) = {dmodel_lr_scale:.6f}")
         # Build embedding/lm_head groups — with per-row WD if provided
-        lm_head_group = dict(kind='adamw', params=lm_head_params, lr=unembedding_lr * dmodel_lr_scale, betas=adam_betas, eps=1e-10, weight_decay=2.0) if lm_head_params else None
+        lm_head_group = dict(kind='adamw', params=lm_head_params, lr=unembedding_lr * dmodel_lr_scale, betas=adam_betas, eps=1e-10, weight_decay=2.0)
         embed_group = dict(kind='adamw', params=embedding_params, lr=embedding_lr * dmodel_lr_scale, betas=adam_betas, eps=1e-10, weight_decay=2.0)
         ve_group = dict(kind='adamw', params=value_embeds_params, lr=embedding_lr * dmodel_lr_scale, betas=adam_betas, eps=1e-10, weight_decay=2.0)
         if embed_wd_per_row is not None:
             embed_group['wd_per_row'] = embed_wd_per_row
             ve_group['wd_per_row'] = embed_wd_per_row
-            if lm_head_group is not None: lm_head_group['wd_per_row'] = embed_wd_per_row
+            lm_head_group['wd_per_row'] = embed_wd_per_row
         if embed_lr_per_row is not None:
             embed_group['lr_per_row'] = embed_lr_per_row
             ve_group['lr_per_row'] = embed_lr_per_row
-            if lm_head_group is not None: lm_head_group['lr_per_row'] = embed_lr_per_row
-        param_groups = [g for g in [
+            lm_head_group['lr_per_row'] = embed_lr_per_row
+        param_groups = [
             lm_head_group,
             embed_group,
             ve_group,
             dict(kind='adamw', params=resid_params, lr=scalar_lr * 0.01, betas=adam_betas, eps=1e-10, weight_decay=0.0),
             dict(kind='adamw', params=x0_params, lr=scalar_lr, betas=(0.96, 0.95), eps=1e-10, weight_decay=0.0),
-        ] if g is not None]
+        ]
         for shape in sorted({p.shape for p in matrix_params}):
             group_params = [p for p in matrix_params if p.shape == shape]
             param_groups.append(dict(
@@ -516,7 +510,7 @@ EMBEDDING_LR = 0.8      # learning rate for token embeddings (Adam)
 UNEMBEDDING_LR = 0.004  # learning rate for lm_head (Adam)
 MATRIX_LR = 0.06        # learning rate for matrix parameters (Muon) — was 0.05
 SCALAR_LR = 0.5         # learning rate for per-layer scalars (Adam)
-WEIGHT_DECAY = 0.15     # Muon WD — tuned: 0.5→0.2→0.15 with more data + smaller batch
+WEIGHT_DECAY = 0.1     # Muon WD — tuned: 0.5→0.2→0.15 with more data + smaller batch
 ADAM_BETAS = (0.8, 0.95) # Adam beta1, beta2
 WARMUP_RATIO = 0.0      # fraction of time budget for LR warmup
 WARMDOWN_RATIO = 0.7    # fraction of time budget for LR warmdown — was 0.5
@@ -590,7 +584,13 @@ EMBED_WD_AUDIO = 0.0      # WD for audio embeddings (0.0 optimal with 115h data)
 embed_wd_per_row = torch.ones(vocab_size, 1, device=device)
 embed_wd_per_row[:AUDIO_START_ID] = EMBED_WD_TEXT
 embed_wd_per_row[AUDIO_START_ID:] = EMBED_WD_AUDIO
-print(f"Per-row WD: text={EMBED_WD_TEXT}, audio={EMBED_WD_AUDIO}")
+import math
+FREQ_WD_C = 0.5
+text_est_freq = 8260.0
+audio_est_freq = 2360.0
+embed_wd_per_row[:AUDIO_START_ID] = FREQ_WD_C / math.sqrt(text_est_freq)
+embed_wd_per_row[AUDIO_START_ID:] = FREQ_WD_C / math.sqrt(audio_est_freq)
+print(f"Freq-proportional WD: text={embed_wd_per_row[0].item():.4f}, audio={embed_wd_per_row[AUDIO_START_ID].item():.4f}")
 
 # H4: Per-row adaptive LR for embeddings
 # Audio tokens are seen less frequently → use higher LR to compensate
