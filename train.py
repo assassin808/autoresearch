@@ -18,7 +18,7 @@ import torch.nn.functional as F
 
 from torch.nn.attention.flex_attention import flex_attention, create_block_mask
 
-from prepare import MAX_SEQ_LEN, TIME_BUDGET, TOTAL_VOCAB_SIZE, AUDIO_START_ID, Tokenizer, make_dataloader, make_omni_dataloader, evaluate_val_loss
+from prepare import MAX_SEQ_LEN, TIME_BUDGET, TOTAL_VOCAB_SIZE, AUDIO_START_ID, Tokenizer, make_dataloader, evaluate_val_loss
 
 # ---------------------------------------------------------------------------
 # GPT Model
@@ -291,7 +291,7 @@ class GPT(nn.Module):
             group_params = [p for p in matrix_params if p.shape == shape]
             param_groups.append(dict(
                 kind='muon', params=group_params, lr=matrix_lr,
-                momentum=0.98, ns_steps=10, beta2=0.95, weight_decay=weight_decay,
+                momentum=0.95, ns_steps=10, beta2=0.95, weight_decay=weight_decay,
             ))
         optimizer = MuonAdamW(param_groups)
         for group in optimizer.param_groups:
@@ -510,7 +510,7 @@ EMBEDDING_LR = 0.8      # learning rate for token embeddings (Adam)
 UNEMBEDDING_LR = 0.004  # learning rate for lm_head (Adam)
 MATRIX_LR = 0.06        # learning rate for matrix parameters (Muon) — was 0.05
 SCALAR_LR = 0.5         # learning rate for per-layer scalars (Adam)
-WEIGHT_DECAY = 0.05     # Muon WD — tuned: 0.5→0.2→0.15 with more data + smaller batch
+WEIGHT_DECAY = 0.03     # Muon WD — tuned: 0.5→0.2→0.15 with more data + smaller batch
 ADAM_BETAS = (0.8, 0.95) # Adam beta1, beta2
 WARMUP_RATIO = 0.0      # fraction of time budget for LR warmup
 WARMDOWN_RATIO = 0.7    # fraction of time budget for LR warmdown — was 0.5
@@ -613,8 +613,8 @@ optimizer = model.setup_optimizer(
 
 model = torch.compile(model, dynamic=False)
 
-train_loader = make_omni_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train", text_ratio=0.7, audio_ratio=0.0, tts_ratio=0.15, asr_ratio=0.15)
-x, y, epoch, _rw = next(train_loader)  # prefetch first batch
+train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
+x, y, epoch = next(train_loader)  # prefetch first batch
 
 print(f"Time budget: {TIME_BUDGET}s")
 print(f"Gradient accumulation steps: {grad_accum_steps}")
@@ -655,7 +655,7 @@ while True:
         train_loss = loss.detach()
         loss = loss / grad_accum_steps
         loss.backward()
-        x, y, epoch, _rw = next(train_loader)
+        x, y, epoch = next(train_loader)
 
     # H2: Progressive audio upweighting
     if AUDIO_UPWEIGHT_SCHEDULE:
