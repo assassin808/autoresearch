@@ -500,7 +500,7 @@ class MuonAdamW(torch.optim.Optimizer):
 # ---------------------------------------------------------------------------
 
 # Model architecture
-ASPECT_RATIO = 64       # model_dim = depth * ASPECT_RATIO
+ASPECT_RATIO = 48       # model_dim = depth * ASPECT_RATIO
 HEAD_DIM = 128          # target head dimension for attention
 WINDOW_PATTERN = "SSSL" # sliding window pattern: L=full, S=half context
 
@@ -527,7 +527,7 @@ MODALITY_REBALANCE = False     # H6: MILES-inspired modality utilization rebalan
 MODALITY_REBALANCE_ALPHA = 0.5 # H6: strength of rebalancing
 
 # Model size
-DEPTH = 8               # number of transformer layers
+DEPTH = 10               # number of transformer layers
 DEVICE_BATCH_SIZE = 16   # per-device batch size (reduce if OOM)
 
 # ---------------------------------------------------------------------------
@@ -584,21 +584,7 @@ EMBED_WD_AUDIO = 0.0      # WD for audio embeddings (0.0 optimal with 115h data)
 embed_wd_per_row = torch.ones(vocab_size, 1, device=device)
 embed_wd_per_row[:AUDIO_START_ID] = EMBED_WD_TEXT
 embed_wd_per_row[AUDIO_START_ID:] = EMBED_WD_AUDIO
-# H1: Frequency-proportional WD = C / sqrt(token_freq)
-# Rough frequency estimates: text tokens avg ~75 occurrences per batch,
-# audio tokens avg ~8 occurrences per batch (30% audio, 12K tokens vs 8K text)
-# We'll compute actual frequencies from the first few batches
-FREQ_WD_C = 2.0  # sweep this
-import math
-# Estimate: text tokens seen ~8x more than audio tokens per step
-# With ~370 steps, text token i seen ~370 * 262K * 0.7 / 8192 ≈ 8260 times
-# Audio token i seen ~370 * 262K * 0.3 / 12288 ≈ 2360 times
-# WD_i = C / sqrt(freq_i) → text WD ~ C/91 ~ 0.005, audio WD ~ C/49 ~ 0.01
-text_est_freq = 8260.0
-audio_est_freq = 2360.0
-embed_wd_per_row[:AUDIO_START_ID] = FREQ_WD_C / math.sqrt(text_est_freq)
-embed_wd_per_row[AUDIO_START_ID:] = FREQ_WD_C / math.sqrt(audio_est_freq)
-print(f"H1: Freq-proportional WD: text={embed_wd_per_row[0].item():.4f}, audio={embed_wd_per_row[AUDIO_START_ID].item():.4f}")
+print(f"Per-row WD: text={EMBED_WD_TEXT}, audio={EMBED_WD_AUDIO}")
 
 # H4: Per-row adaptive LR for embeddings
 # Audio tokens are seen less frequently → use higher LR to compensate
