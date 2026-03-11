@@ -633,6 +633,182 @@ def evaluate_bpb(model, tokenizer, batch_size):
 
 
 # ---------------------------------------------------------------------------
+# Paired (cross-modal) document iterator for omni training
+# ---------------------------------------------------------------------------
+
+def _paired_document_batches(split, tokenizer, batch_size=64, mode="tts"):
+    """Infinite iterator over paired text+audio documents.
+
+    Modes:
+        'tts': [BOS] text_tokens [AUDIO_START] audio_tokens [AUDIO_END]
+        'asr': [AUDIO_START] audio_tokens [AUDIO_END] [BOS] text_tokens
+        'both': randomly alternate between tts and asr
+
+    Requires paired_train.pt / paired_val.pt from prepare_paired.py.
+    """
+    if split == "train":
+        path = os.path.join(AUDIO_DIR, "paired_train.pt")
+    else:
+        path = os.path.join(AUDIO_DIR, "paired_val.pt")
+
+    if not os.path.exists(path):
+        return None  # paired data not available
+
+    pairs = torch.load(path)
+    assert len(pairs) > 0, f"No paired docs in {path}"
+    bos = tokenizer.get_bos_token_id()
+    epoch = 1
+
+    while True:
+        random.shuffle(pairs)
+        for i in range(0, len(pairs), batch_size):
+            batch_docs = []
+            for p in pairs[i:i+batch_size]:
+                text_toks = [bos] + p['text_tokens']
+                audio_toks = p['audio_flat']
+
+                if mode == "tts":
+                    doc = text_toks + audio_toks
+                elif mode == "asr":
+                    doc = audio_toks + text_toks
+                elif mode == "both":
+                    if random.random() < 0.5:
+                        doc = text_toks + audio_toks
+                    else:
+                        doc = audio_toks + text_toks
+                else:
+                    raise ValueError(f"Unknown mode: {mode}")
+
+                batch_docs.append(doc)
+            yield batch_docs, epoch
+        epoch += 1
+
+
+def make_omni_dataloader(tokenizer, B, T, split, buffer_size=1000,
+                         text_ratio=0.4, audio_ratio=0.2, tts_ratio=0.2, asr_ratio=0.2):
+    """
+    Omni dataloader with 4 training modes:
+    - text_ratio: fraction of rows with pure text
+    - audio_ratio: fraction of rows with pure audio
+    - tts_ratio: fraction of rows with text→audio pairs
+    - asr_ratio: fraction of rows with audio→text pairs
+
+    Total must sum to 1.0. Falls back to text+audio only if paired data unavailable.
+    """
+    assert split in ["train", "val"]
+    assert abs(text_ratio + audio_ratio + tts_ratio + asr_ratio - 1.0) < 1e-6
+
+    row_capacity = T + 1
+    bos_token = tokenizer.get_bos_token_id()
+
+    # Check paired data availability
+    paired_path = os.path.join(AUDIO_DIR, "paired_train.pt" if split == "train" else "paired_val.pt")
+    has_paired = os.path.exists(paired_path)
+    if not has_paired and (tts_ratio > 0 or asr_ratio > 0):
+        print(f"Warning: No paired data found at {paired_path}. Falling back to text+audio only.")
+        extra = tts_ratio + asr_ratio
+        text_ratio += extra * (text_ratio / (text_ratio + audio_ratio + 1e-10))
+        audio_ratio += extra * (audio_ratio / (text_ratio + audio_ratio + 1e-10))
+        tts_ratio = asr_ratio = 0.0
+
+    # Row counts per mode
+    n_text = max(1, int(B * text_ratio))
+    n_audio = max(1, int(B * audio_ratio)) if audio_ratio > 0 else 0
+    n_tts = max(1, int(B * tts_ratio)) if tts_ratio > 0 and has_paired else 0
+    n_asr = max(1, int(B * asr_ratio)) if asr_ratio > 0 and has_paired else 0
+    # Adjust n_text to fill remainder
+    n_text = B - n_audio - n_tts - n_asr
+
+    print(f"Omni dataloader: {n_text} text, {n_audio} audio, {n_tts} TTS, {n_asr} ASR rows (B={B})")
+
+    # Setup iterators
+    text_batches = _text_document_batches(split)
+    text_buffer = []
+
+    audio_path = os.path.join(AUDIO_DIR, "train_tokens.pt" if split == "train" else "val_tokens.pt")
+    has_audio = os.path.exists(audio_path)
+    audio_buffer = []
+    if has_audio and n_audio > 0:
+        audio_batches = _audio_document_batches(split)
+
+    tts_buffer = []
+    asr_buffer = []
+    if has_paired and n_tts > 0:
+        tts_batches = _paired_document_batches(split, tokenizer, mode="tts")
+    if has_paired and n_asr > 0:
+        asr_batches = _paired_document_batches(split, tokenizer, mode="asr")
+
+    epoch = 1
+
+    def refill_text():
+        nonlocal epoch
+        doc_batch, epoch = next(text_batches)
+        token_lists = tokenizer.encode(doc_batch, prepend=bos_token)
+        text_buffer.extend(token_lists)
+
+    def refill_audio():
+        if has_audio:
+            doc_batch, _ = next(audio_batches)
+            audio_buffer.extend(doc_batch)
+
+    def refill_tts():
+        if has_paired:
+            doc_batch, _ = next(tts_batches)
+            tts_buffer.extend(doc_batch)
+
+    def refill_asr():
+        if has_paired:
+            doc_batch, _ = next(asr_batches)
+            asr_buffer.extend(doc_batch)
+
+    def pack_row(row_idx, doc_buffer, refill_fn):
+        pos = 0
+        while pos < row_capacity:
+            while len(doc_buffer) < buffer_size:
+                refill_fn()
+            remaining = row_capacity - pos
+            best_idx, best_len = -1, 0
+            for i, doc in enumerate(doc_buffer):
+                doc_len = len(doc)
+                if doc_len <= remaining and doc_len > best_len:
+                    best_idx = i
+                    best_len = doc_len
+            if best_idx >= 0:
+                doc = doc_buffer.pop(best_idx)
+                row_buffer[row_idx, pos:pos + len(doc)] = torch.tensor(doc, dtype=torch.long)
+                pos += len(doc)
+            else:
+                shortest_idx = min(range(len(doc_buffer)), key=lambda i: len(doc_buffer[i]))
+                doc = doc_buffer.pop(shortest_idx)
+                row_buffer[row_idx, pos:pos + remaining] = torch.tensor(doc[:remaining], dtype=torch.long)
+                pos += remaining
+
+    row_buffer = torch.empty((B, row_capacity), dtype=torch.long)
+    cpu_buffer = torch.empty(2 * B * T, dtype=torch.long, pin_memory=True)
+    gpu_buffer = torch.empty(2 * B * T, dtype=torch.long, device="cuda")
+    cpu_inputs = cpu_buffer[:B * T].view(B, T)
+    cpu_targets = cpu_buffer[B * T:].view(B, T)
+    inputs = gpu_buffer[:B * T].view(B, T)
+    targets = gpu_buffer[B * T:].view(B, T)
+
+    while True:
+        for row_idx in range(B):
+            if row_idx < n_text:
+                pack_row(row_idx, text_buffer, refill_text)
+            elif row_idx < n_text + n_audio:
+                pack_row(row_idx, audio_buffer, refill_audio)
+            elif row_idx < n_text + n_audio + n_tts:
+                pack_row(row_idx, tts_buffer, refill_tts)
+            else:
+                pack_row(row_idx, asr_buffer, refill_asr)
+
+        cpu_inputs.copy_(row_buffer[:, :-1])
+        cpu_targets.copy_(row_buffer[:, 1:])
+        gpu_buffer.copy_(cpu_buffer, non_blocking=True)
+        yield inputs, targets, epoch
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
