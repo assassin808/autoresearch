@@ -613,7 +613,7 @@ optimizer = model.setup_optimizer(
 
 model = torch.compile(model, dynamic=False)
 
-train_loader = make_omni_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train", text_ratio=0.65, audio_ratio=0.0, tts_ratio=0.175, asr_ratio=0.175)
+train_loader = make_omni_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train", text_ratio=0.6, audio_ratio=0.0, tts_ratio=0.2, asr_ratio=0.2)
 x, y, epoch, _rw = next(train_loader)  # prefetch first batch
 
 print(f"Time budget: {TIME_BUDGET}s")
