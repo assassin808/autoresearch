@@ -508,7 +508,7 @@ WINDOW_PATTERN = "LLLL" # all full attention — sliding window not needed at 20
 TOTAL_BATCH_SIZE = 2**16 # ~128K tokens per optimizer step (more steps > gradient quality)
 EMBEDDING_LR = 0.8      # learning rate for token embeddings (Adam)
 UNEMBEDDING_LR = 0.004  # learning rate for lm_head (Adam)
-MATRIX_LR = 0.06        # learning rate for matrix parameters (Muon) — was 0.05
+MATRIX_LR = 0.08        # learning rate for matrix parameters (Muon) — was 0.05
 SCALAR_LR = 0.5         # learning rate for per-layer scalars (Adam)
 WEIGHT_DECAY = 0.1     # Muon WD — tuned: 0.5→0.2→0.15 with more data + smaller batch
 ADAM_BETAS = (0.8, 0.95) # Adam beta1, beta2
@@ -523,7 +523,7 @@ PERROW_LR = False              # H4: per-row adaptive LR for embeddings
 PERROW_LR_ALPHA = 0.3          # H4: exponent for frequency-based LR scaling
 ADADECAY_WD = False            # H5: gradient-magnitude adaptive WD (inspired by AdaDecay)
 ADADECAY_BETA = 0.99           # H5: EMA smoothing for gradient magnitudes
-MODALITY_REBALANCE = True     # H6: MILES-inspired modality utilization rebalancing
+MODALITY_REBALANCE = False     # H6: MILES-inspired modality utilization rebalancing
 MODALITY_REBALANCE_ALPHA = 0.5 # H6: strength of rebalancing
 
 # Model size
