@@ -56,7 +56,7 @@ TOTAL_VOCAB_SIZE = SNAC_OFFSET + SNAC_NUM_LEVELS * SNAC_CODEBOOK_SIZE  # 20482
 # Audio data settings
 AUDIO_TRAIN_HOURS = 115   # LibriSpeech train-clean-100 + dev-other + test-clean + test-other
 AUDIO_VAL_HOURS = 5       # LibriSpeech dev-clean
-AUDIO_MIX_RATIO = 0.3     # fraction of batch rows that are audio (rest are text)
+AUDIO_MIX_RATIO = 0.15     # fraction of batch rows that are audio (rest are text)
 
 # ---------------------------------------------------------------------------
 # Configuration
