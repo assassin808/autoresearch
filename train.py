@@ -291,7 +291,7 @@ class GPT(nn.Module):
             group_params = [p for p in matrix_params if p.shape == shape]
             param_groups.append(dict(
                 kind='muon', params=group_params, lr=matrix_lr,
-                momentum=0.98, ns_steps=10, beta2=0.95, weight_decay=weight_decay,
+                momentum=0.95, ns_steps=10, beta2=0.95, weight_decay=weight_decay,
             ))
         optimizer = MuonAdamW(param_groups)
         for group in optimizer.param_groups:
@@ -613,8 +613,8 @@ optimizer = model.setup_optimizer(
 
 model = torch.compile(model, dynamic=False)
 
-train_loader = make_omni_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train", text_ratio=0.5, audio_ratio=0.1, tts_ratio=0.2, asr_ratio=0.2, cross_modal_weight=1.0)
-x, y, epoch, _rw = next(train_loader)  # prefetch first batch
+train_loader = make_omni_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train", text_ratio=0.5, audio_ratio=0.1, tts_ratio=0.2, asr_ratio=0.2, cross_modal_weight=0.5)
+x, y, epoch, row_weights = next(train_loader)  # prefetch first batch
 
 print(f"Time budget: {TIME_BUDGET}s")
 print(f"Gradient accumulation steps: {grad_accum_steps}")
@@ -635,7 +635,7 @@ def get_muon_momentum(step):
     return (1 - frac) * 0.85 + frac * 0.95
 
 def get_weight_decay(progress):
-    return WEIGHT_DECAY * get_lr_multiplier(progress)  # coupled WD
+    return WEIGHT_DECAY  # constant WD (was decaying to 0)
 
 # ---------------------------------------------------------------------------
 # Training loop
@@ -651,11 +651,12 @@ while True:
     t0 = time.time()
     for micro_step in range(grad_accum_steps):
         with autocast_ctx:
-            loss = model(x, y)
+            per_sample_loss = model(x, y, reduction='none').view(x.shape[0], -1).mean(dim=1)
+            loss = (per_sample_loss * row_weights).mean()
         train_loss = loss.detach()
         loss = loss / grad_accum_steps
         loss.backward()
-        x, y, epoch, _rw = next(train_loader)
+        x, y, epoch, row_weights = next(train_loader)
 
     # H2: Progressive audio upweighting
     if AUDIO_UPWEIGHT_SCHEDULE:
