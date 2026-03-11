@@ -506,11 +506,11 @@ WINDOW_PATTERN = "LLLL" # all full attention — sliding window not needed at 20
 
 # Optimization
 TOTAL_BATCH_SIZE = 2**17 # ~128K tokens per optimizer step (more steps > gradient quality)
-EMBEDDING_LR = 0.8      # learning rate for token embeddings (Adam)
+EMBEDDING_LR = 0.6      # learning rate for token embeddings (Adam)
 UNEMBEDDING_LR = 0.004  # learning rate for lm_head (Adam)
 MATRIX_LR = 0.06        # learning rate for matrix parameters (Muon) — was 0.05
 SCALAR_LR = 0.5         # learning rate for per-layer scalars (Adam)
-WEIGHT_DECAY = 0.2     # Muon WD — tuned: 0.5→0.2→0.15 with more data + smaller batch
+WEIGHT_DECAY = 0.15     # Muon WD — tuned: 0.5→0.2→0.15 with more data + smaller batch
 ADAM_BETAS = (0.8, 0.95) # Adam beta1, beta2
 WARMUP_RATIO = 0.0      # fraction of time budget for LR warmup
 WARMDOWN_RATIO = 0.7    # fraction of time budget for LR warmdown — was 0.5
