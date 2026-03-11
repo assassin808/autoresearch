@@ -500,9 +500,9 @@ class MuonAdamW(torch.optim.Optimizer):
 # ---------------------------------------------------------------------------
 
 # Model architecture
-ASPECT_RATIO = 80       # model_dim = depth * ASPECT_RATIO
+ASPECT_RATIO = 64       # model_dim = depth * ASPECT_RATIO
 HEAD_DIM = 128          # target head dimension for attention
-WINDOW_PATTERN = "SSSL" # sliding window pattern: L=full, S=half context
+WINDOW_PATTERN = "SSLL" # sliding window pattern: L=full, S=half context
 
 # Optimization
 TOTAL_BATCH_SIZE = 2**17 # ~128K tokens per optimizer step (more steps > gradient quality)
@@ -527,7 +527,7 @@ MODALITY_REBALANCE = False     # H6: MILES-inspired modality utilization rebalan
 MODALITY_REBALANCE_ALPHA = 0.5 # H6: strength of rebalancing
 
 # Model size
-DEPTH = 6               # number of transformer layers
+DEPTH = 8               # number of transformer layers
 DEVICE_BATCH_SIZE = 16   # per-device batch size (reduce if OOM)
 
 # ---------------------------------------------------------------------------
