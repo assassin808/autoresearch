@@ -122,11 +122,17 @@ LOSS_WEIGHTED = """            per_sample_loss = model(x, y, reduction='none').v
 # For normal (unweighted) omni training, we just ignore row_weights
 UNPACK_IGNORE_WEIGHTS = '        x, y, epoch, _rw = next(train_loader)'
 
+# Also need to fix the prefetch line
+PREFETCH_OLD = 'x, y, epoch = next(train_loader)  # prefetch first batch'
+PREFETCH_IGNORE = 'x, y, epoch, _rw = next(train_loader)  # prefetch first batch'
+PREFETCH_WEIGHTED = 'x, y, epoch, row_weights = next(train_loader)  # prefetch first batch'
+
 experiments = [
     # ===== 1. High text ratio omni =====
     ("omni_high_text: t0.7+tts0.15+asr0.15", [
         (IMPORT_OLD, IMPORT_NEW),
         (DATALOADER_OLD, omni_dataloader(0.7, 0.0, 0.15, 0.15)),
+        (PREFETCH_OLD, PREFETCH_IGNORE),
         (UNPACK_OLD, UNPACK_IGNORE_WEIGHTS),
     ], None),
 
@@ -134,6 +140,7 @@ experiments = [
     ("omni_ht+coupledWD: t0.7+tts0.15+asr0.15", [
         (IMPORT_OLD, IMPORT_NEW),
         (DATALOADER_OLD, omni_dataloader(0.7, 0.0, 0.15, 0.15)),
+        (PREFETCH_OLD, PREFETCH_IGNORE),
         (UNPACK_OLD, UNPACK_IGNORE_WEIGHTS),
         ("return WEIGHT_DECAY  # constant WD (was decaying to 0)",
          "return WEIGHT_DECAY * get_lr_multiplier(progress)  # coupled WD"),
@@ -143,6 +150,7 @@ experiments = [
     ("omni+gradbal: t0.5+a0.1+tts0.2+asr0.2", [
         (IMPORT_OLD, IMPORT_NEW),
         (DATALOADER_OLD, omni_dataloader(0.5, 0.1, 0.2, 0.2)),
+        (PREFETCH_OLD, PREFETCH_IGNORE),
         (UNPACK_OLD, UNPACK_IGNORE_WEIGHTS),
         ("GRAD_NORM_BALANCE = False", "GRAD_NORM_BALANCE = True"),
     ], None),
@@ -151,6 +159,7 @@ experiments = [
     ("omni+rebal: t0.5+a0.1+tts0.2+asr0.2", [
         (IMPORT_OLD, IMPORT_NEW),
         (DATALOADER_OLD, omni_dataloader(0.5, 0.1, 0.2, 0.2)),
+        (PREFETCH_OLD, PREFETCH_IGNORE),
         (UNPACK_OLD, UNPACK_IGNORE_WEIGHTS),
         ("MODALITY_REBALANCE = False", "MODALITY_REBALANCE = True"),
     ], None),
@@ -159,6 +168,7 @@ experiments = [
     ("omni+matLR0.08: t0.5+a0.1+tts0.2+asr0.2", [
         (IMPORT_OLD, IMPORT_NEW),
         (DATALOADER_OLD, omni_dataloader(0.5, 0.1, 0.2, 0.2)),
+        (PREFETCH_OLD, PREFETCH_IGNORE),
         (UNPACK_OLD, UNPACK_IGNORE_WEIGHTS),
         ("MATRIX_LR = 0.06", "MATRIX_LR = 0.08"),
     ], None),
@@ -167,6 +177,7 @@ experiments = [
     ("omni+WD0.05: t0.5+a0.1+tts0.2+asr0.2", [
         (IMPORT_OLD, IMPORT_NEW),
         (DATALOADER_OLD, omni_dataloader(0.5, 0.1, 0.2, 0.2)),
+        (PREFETCH_OLD, PREFETCH_IGNORE),
         (UNPACK_OLD, UNPACK_IGNORE_WEIGHTS),
         ("WEIGHT_DECAY = 0.1", "WEIGHT_DECAY = 0.05"),
     ], None),
@@ -175,6 +186,7 @@ experiments = [
     ("omni+mom98+cWD: t0.5+a0.1+tts0.2+asr0.2", [
         (IMPORT_OLD, IMPORT_NEW),
         (DATALOADER_OLD, omni_dataloader(0.5, 0.1, 0.2, 0.2)),
+        (PREFETCH_OLD, PREFETCH_IGNORE),
         (UNPACK_OLD, UNPACK_IGNORE_WEIGHTS),
         ("momentum=0.95, ns_steps=10", "momentum=0.98, ns_steps=10"),
         ("return WEIGHT_DECAY  # constant WD (was decaying to 0)",
@@ -185,6 +197,7 @@ experiments = [
     ("omni+cmw0.5: t0.5+a0.1+tts0.2+asr0.2", [
         (IMPORT_OLD, IMPORT_NEW),
         (DATALOADER_OLD, omni_dataloader(0.5, 0.1, 0.2, 0.2, cross_modal_weight=0.5)),
+        (PREFETCH_OLD, PREFETCH_WEIGHTED),
         (UNPACK_OLD, UNPACK_NEW_WEIGHTED),
         (LOSS_OLD, LOSS_WEIGHTED),
     ], None),
@@ -193,6 +206,7 @@ experiments = [
     ("omni+depth10: t0.5+a0.1+tts0.2+asr0.2", [
         (IMPORT_OLD, IMPORT_NEW),
         (DATALOADER_OLD, omni_dataloader(0.5, 0.1, 0.2, 0.2)),
+        (PREFETCH_OLD, PREFETCH_IGNORE),
         (UNPACK_OLD, UNPACK_IGNORE_WEIGHTS),
         ("DEPTH = 8", "DEPTH = 10"),
     ], None),
@@ -201,6 +215,7 @@ experiments = [
     ("omni_light_audio: t0.65+a0.05+tts0.15+asr0.15", [
         (IMPORT_OLD, IMPORT_NEW),
         (DATALOADER_OLD, omni_dataloader(0.65, 0.05, 0.15, 0.15)),
+        (PREFETCH_OLD, PREFETCH_IGNORE),
         (UNPACK_OLD, UNPACK_IGNORE_WEIGHTS),
     ], None),
 
@@ -208,6 +223,7 @@ experiments = [
     ("omni_best: t0.7+tts0.15+asr0.15+cWD+m98", [
         (IMPORT_OLD, IMPORT_NEW),
         (DATALOADER_OLD, omni_dataloader(0.7, 0.0, 0.15, 0.15)),
+        (PREFETCH_OLD, PREFETCH_IGNORE),
         (UNPACK_OLD, UNPACK_IGNORE_WEIGHTS),
         ("momentum=0.95, ns_steps=10", "momentum=0.98, ns_steps=10"),
         ("return WEIGHT_DECAY  # constant WD (was decaying to 0)",
@@ -218,6 +234,7 @@ experiments = [
     ("omni+cmw0.3: t0.5+a0.1+tts0.2+asr0.2", [
         (IMPORT_OLD, IMPORT_NEW),
         (DATALOADER_OLD, omni_dataloader(0.5, 0.1, 0.2, 0.2, cross_modal_weight=0.3)),
+        (PREFETCH_OLD, PREFETCH_WEIGHTED),
         (UNPACK_OLD, UNPACK_NEW_WEIGHTED),
         (LOSS_OLD, LOSS_WEIGHTED),
     ], None),
