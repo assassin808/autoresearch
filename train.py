@@ -291,7 +291,7 @@ class GPT(nn.Module):
             group_params = [p for p in matrix_params if p.shape == shape]
             param_groups.append(dict(
                 kind='muon', params=group_params, lr=matrix_lr,
-                momentum=0.95, ns_steps=5, beta2=0.95, weight_decay=weight_decay,
+                momentum=0.95, ns_steps=10, beta2=0.95, weight_decay=weight_decay,
             ))
         optimizer = MuonAdamW(param_groups)
         for group in optimizer.param_groups:
@@ -508,7 +508,7 @@ WINDOW_PATTERN = "SSSL" # sliding window pattern: L=full, S=half context
 TOTAL_BATCH_SIZE = 2**17 # ~262K tokens per optimizer step (less grad accum = more steps)
 EMBEDDING_LR = 0.8      # learning rate for token embeddings (Adam)
 UNEMBEDDING_LR = 0.004  # learning rate for lm_head (Adam)
-MATRIX_LR = 0.07        # learning rate for matrix parameters (Muon) — was 0.05
+MATRIX_LR = 0.06        # learning rate for matrix parameters (Muon) — was 0.05
 SCALAR_LR = 0.5         # learning rate for per-layer scalars (Adam)
 WEIGHT_DECAY = 0.2      # Muon WD — tuned down from 0.5 with more data
 ADAM_BETAS = (0.8, 0.95) # Adam beta1, beta2
@@ -635,7 +635,7 @@ def get_muon_momentum(step):
     return (1 - frac) * 0.85 + frac * 0.95
 
 def get_weight_decay(progress):
-    return WEIGHT_DECAY  # constant WD (was decaying to 0)
+    return WEIGHT_DECAY * get_lr_multiplier(progress)  # WD decays with LR
 
 # ---------------------------------------------------------------------------
 # Training loop
