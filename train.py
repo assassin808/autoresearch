@@ -510,7 +510,7 @@ EMBEDDING_LR = 0.8      # learning rate for token embeddings (Adam)
 UNEMBEDDING_LR = 0.004  # learning rate for lm_head (Adam)
 MATRIX_LR = 0.06        # learning rate for matrix parameters (Muon) — was 0.05
 SCALAR_LR = 0.5         # learning rate for per-layer scalars (Adam)
-WEIGHT_DECAY = 0.15      # Muon WD — tuned down from 0.5 with more data
+WEIGHT_DECAY = 0.2      # Muon WD — tuned down from 0.5 with more data
 ADAM_BETAS = (0.8, 0.95) # Adam beta1, beta2
 WARMUP_RATIO = 0.0      # fraction of time budget for LR warmup
 WARMDOWN_RATIO = 0.7    # fraction of time budget for LR warmdown — was 0.5
@@ -580,7 +580,7 @@ grad_accum_steps = TOTAL_BATCH_SIZE // tokens_per_fwdbwd
 # Text tokens (0..AUDIO_START_ID-1): low WD (frequently updated, need rich representations)
 # Audio tokens (AUDIO_START_ID..vocab_size-1): high WD (rare, need regularization)
 EMBED_WD_TEXT = 0.0       # WD for text embeddings (lower = less regularization)
-EMBED_WD_AUDIO = 0.0      # WD for audio embeddings (0.0 optimal with 115h data)
+EMBED_WD_AUDIO = 0.1      # WD for audio embeddings (0.0 optimal with 115h data)
 embed_wd_per_row = torch.ones(vocab_size, 1, device=device)
 embed_wd_per_row[:AUDIO_START_ID] = EMBED_WD_TEXT
 embed_wd_per_row[AUDIO_START_ID:] = EMBED_WD_AUDIO
