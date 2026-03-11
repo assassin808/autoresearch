@@ -518,12 +518,12 @@ FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
 # Experiment flags (enable one at a time for testing)
 AUDIO_UPWEIGHT_SCHEDULE = False  # H2: progressively upweight audio loss
 AUDIO_UPWEIGHT_MAX = 1.5       # H2: max audio loss weight at end of training
-GRAD_NORM_BALANCE = True      # H3: balance gradient norms between modalities
+GRAD_NORM_BALANCE = False      # H3: balance gradient norms between modalities
 PERROW_LR = False              # H4: per-row adaptive LR for embeddings
 PERROW_LR_ALPHA = 0.3          # H4: exponent for frequency-based LR scaling
 ADADECAY_WD = False            # H5: gradient-magnitude adaptive WD (inspired by AdaDecay)
 ADADECAY_BETA = 0.99           # H5: EMA smoothing for gradient magnitudes
-MODALITY_REBALANCE = False     # H6: MILES-inspired modality utilization rebalancing
+MODALITY_REBALANCE = True     # H6: MILES-inspired modality utilization rebalancing
 MODALITY_REBALANCE_ALPHA = 0.5 # H6: strength of rebalancing
 
 # Model size
