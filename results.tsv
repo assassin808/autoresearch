@@ -1,0 +1,168 @@
+commit	val_loss	text_bpb	audio_loss	memory_gb	status	description
+9c4f919	5.125476	1.201054	10.395206	16.3	keep	baseline: SDPA/FlexAttn, depth=8, bs=16, 88M params
+27ffbf5	5.362470	1.849501	5.801337	22.1	discard	no VE, depth=8, bs=32, chunked loss — worse val_loss
+786b32c	5.194717	1.206856	10.623520	16.3	discard	Muon LR 0.06, warmup 5%, warmdown 30% — worse
+b14f528	5.122001	1.143331	10.867389	16.3	keep	batch 262K, 366 steps — slight improvement
+c647a49	5.185126	1.120744	11.309889	16.3	discard	batch 131K, 716 steps — too small batch
+e98e5bd	5.172071	1.149300	11.017435	16.3	discard	emb LR 0.4, warmup 5%, warmdown 40% — worse
+5c13a73	5.127010	1.142410	10.895058	16.3	discard	emb LR 0.8 — marginal worse
+b628292	5.126620	1.140969	10.905614	16.3	discard	Muon WD 0.4 — marginal worse
+d50f4c5	5.155797	1.148868	10.956075	16.3	discard	Adam beta1=0.9 — worse
+379c0b3	5.156691	1.139756	11.035970	16.3	discard	final LR 0.1 — worse
+7156a44	5.123625	1.143379	10.873630	16.3	discard	Muon mom warmup 100 steps — same
+71cd002	5.094501	1.144314	10.749239	16.3	keep	warmdown 0.7 — new best!
+4db6240	5.107352	1.149916	10.753293	16.3	discard	warmdown 0.8 — worse than 0.7
+c17a1d1	5.090033	1.140289	10.765001	16.3	keep	Muon LR 0.05 + warmdown 0.7 — new best!
+e08efcb	5.088529	1.140696	10.755686	16.3	keep	Muon LR 0.06 — new best!
+93bc754	5.099845	1.138763	10.817467	16.3	discard	Muon LR 0.08 — too high
+a2640d5	5.203514	1.137832	11.239598	16.3	discard	unembed LR 0.008 — much worse
+d57904c	5.095222	1.145155	10.744764	16.3	discard	NS steps 4 — worse quality
+5c857c9	5.019507	1.140309	10.482942	16.3	keep	embed WD 0.01 — BIG improvement!
+7ede099	4.990181	1.141489	10.355735	16.3	keep	embed WD 0.02 — even better!
+ce77619	4.900815	1.154140	9.891789	16.3	keep	embed WD 0.05 — huge improvement!
+477105b	4.826594	1.169506	9.465718	16.3	keep	embed WD 0.1 — even better!
+3935201	4.768300	1.187649	9.079455	16.3	keep	embed WD 0.2 — keeps improving!
+31dbd1f	4.700718	1.213200	8.594238	16.3	keep	embed WD 0.4 — still improving!
+1fa9440	4.613498	1.240317	8.017344	16.3	keep	embed WD 0.8 — massive improvement!
+596c8fa	4.530209	1.276309	7.381209	16.3	keep	embed WD 1.5 — still going!
+64f95b8	5.097722	1.620748	6.752796	16.3	discard	embed WD 3.0 — too much, killed text
+526dec7	4.458751	1.284223	7.028755	16.3	keep	embed WD 2.0 — new best!
+616990c	4.472494	1.356436	6.475995	16.3	discard	embed WD 2.5 — text degraded too much
+74f4dab	0.000000	0.000000	0.000000	16.3	crash	VE WD=4.0 — NaN
+4738364	4.452166	1.287248	6.977052	16.3	keep	lm_head WD=0.1 — slight improvement
+c8e8283	4.414777	1.283318	6.860397	16.3	keep	lm_head WD=0.5 — nice improvement!
+45bb689	4.401589	1.312160	6.565165	16.3	keep	lm_head WD=1.0 — new best!
+ab2d06c	4.333536	1.300959	6.387310	16.3	keep	lm_head WD=2.0 — new best!
+daf5678	4.362189	1.333984	6.223897	16.3	discard	lm_head WD=4.0 — too much
+c9fbb03	4.324084	1.294200	6.406475	16.3	keep	Muon WD 0.5 — new best!
+2091476	4.343297	1.310099	6.349639	16.3	discard	Muon WD 1.0 — worse
+d7d1ab9	4.381571	1.276097	6.788771	16.3	discard	emb LR 0.3 — worse
+b2ba67f	6.318506	2.053668	7.987688	16.3	discard	emb LR 1.0 — way too high
+d5010f4	4.313836	1.293437	6.371786	16.3	keep	constant Muon WD — new best!
+abc1f20	4.317321	1.293158	6.387897	16.3	discard	softcap 30 — same
+0d05510	4.292375	1.300615	6.225038	16.3	keep	dropout=0.1 — new best!
+315a703	4.319198	1.315768	6.205117	16.3	discard	dropout=0.15 — too much
+96f17ec	4.367355	1.327162	6.301672	16.3	discard	audio_weight=1.5 — gap narrowed but val worse
+3c2a621	4.328298	1.313843	6.257895	16.3	discard	audio_weight=1.2 — marginal worse than 1.0
+d93c2c7	4.401307	1.354441	6.207928	16.3	discard	embed betas(0.6,0.85) — text degraded, gap wider
+976260b	4.777961	1.401733	7.316651	16.3	discard	audio_ratio=0.5 — worse, text degraded heavily
+ecd78e2	5.126116	1.628973	6.797142	16.3	discard	dual-NS Muon — too slow, text collapsed
+8db35d1	0.000000	0.000000	0.000000	16.3	crash	per-row WD text=0.5 audio=4.0 — NaN in eval
+11f7b69	4.279630	1.292848	6.239632	16.3	keep	per-row WD wte — text=1.0 audio=3.0 — new best!
+c2a5fd6	4.222617	1.267437	6.225405	16.3	keep	per-row WD text=0.5 audio=3.0 — new best!
+0b57fd4	4.172590	1.241119	6.247160	16.3	keep	per-row WD text=0.2 audio=3.0 — new best!
+7db03fa	4.149235	1.226269	6.278694	16.3	keep	per-row WD text=0.1 audio=3.0 — new best!
+ac6dfe2	4.107928	1.204007	6.300972	16.3	keep	per-row WD text=0.0 audio=3.0 — new best! text near-baseline
+bf3dda0	0.000000	0.000000	0.000000	16.3	crash	per-row WD text=0.0 audio=5.0 — NaN
+fbc686a	4.221323	1.208465	6.716815	16.3	discard	per-row WD text=0.0 audio=3.5 — too much audio WD
+1980d79	4.103846	1.180117	6.485147	16.3	keep	per-row WD wte+VE — text=0.0 audio=3.0 — new best!
+5ba7941	4.078157	1.167415	6.489615	16.3	keep	per-row WD all embeds — text=0.0 audio=3.0 — new best!
+940cd87	3.995318	1.157819	6.238790	16.3	keep	per-row WD text=0.0 audio=2.5 — broke 4.0! new best!
+9b760a7	4.041019	1.161420	6.391391	16.3	discard	per-row WD text=0.0 audio=2.0 — audio worse
+8a7d425	3.992982	1.153122	6.268985	16.3	keep	dropout=0.05 + per-row WD — marginal best
+50760fa	3.996083	1.150788	6.300895	16.3	discard	dropout=0.0 — audio degraded
+5905976	0.000000	0.000000	0.000000	16.3	crash	H2 progressive audio upweight — eval broken (audio_loss=0)
+a08075a	3.976652	1.150530	6.225438	16.3	keep	new-baseline: 100h audio, per-row WD text=0.0 audio=2.5
+be62469	3.319050	1.183478	0.000000	16.3	crash	100h audio, per-row WD audio=1.0
+b2bcd8f	3.980940	1.150495	6.243127	16.3	keep	baseline-115h: per-row WD text=0.0 audio=2.5
+6f5d360	3.948361	1.153474	6.087452	16.3	keep	115h audio, per-row WD audio=1.5
+658e985	3.927524	1.152211	6.014911	16.3	keep	115h audio, per-row WD audio=1.0
+a1953e0	3.895529	1.148833	5.915286	16.3	keep	115h audio, per-row WD audio=0.5
+2d90e44	3.872927	1.150745	5.808796	16.3	keep	115h audio, per-row WD audio=0.2
+7cacc37	3.988520	1.152363	6.257867	16.3	keep	H2: progressive audio upweight max=1.5
+e6c9b0f	3.985361	1.148706	6.275935	16.3	keep	H2: progressive audio upweight max=1.2
+275aafc	4.016222	1.154530	6.350127	16.3	keep	H3: gradient norm balancing
+4357988	8.309811	3.035861	7.683617	16.3	keep	H4: per-row LR alpha=0.3
+d3d4c05	9.316166	3.426479	8.420962	16.3	keep	H4: per-row LR alpha=0.5
+6792ffd	0.000000	0.000000	0.000000	16.3	crash	H5: AdaDecay WD beta=0.99
+f026452	0.000000	0.000000	0.000000	16.3	crash	H5: AdaDecay WD beta=0.95
+30a56c5	3.995238	1.153117	6.278284	16.3	keep	H6: MILES rebalance alpha=0.5
+ee8652e	3.976356	1.148956	6.237510	16.3	keep	H6: MILES rebalance alpha=0.8
+fa6c913	3.858528	1.152000	5.740910	16.3	keep	115h audio, per-row WD audio=0.1
+1b127d0	3.838475	1.151080	5.668296	16.3	keep	115h audio, per-row WD audio=0.0 (no audio WD)
+0aa0c6a	3.883847	1.150823	5.851666	16.3	keep	115h audio, per-row WD audio=0.3
+cfcaa26	nan	nan	nan	16.3	crash	H5-fixed: AdaDecay WD beta=0.99
+14c2fa4	3.866087	1.151338	5.776380	16.3	keep	WD=0.2 + H5 AdaDecay
+453cf87	3.883293	1.150717	5.850446	16.3	keep	WD=0.2 + H6 MILES alpha=0.8
+a87d526	3.891780	1.155796	5.841590	16.3	keep	WD=0.2 + dropout=0.1
+5b652ab	3.860119	1.143377	5.819643	16.3	keep	WD=0.2 + Muon WD=0.2
+f9bd777	3.807575	1.142790	5.614513	16.3	keep	WD=0.0 + Muon WD=0.2
+cb7878a	3.824941	1.146593	5.651887	16.3	keep	WD=0.0 + Muon WD=0.3
+fd3a44f	3.812249	1.147454	5.593674	16.3	keep	WD=0.0 + dropout=0.0
+14d77d7	3.808146	1.138603	5.651921	16.3	keep	WD=0.0 + Muon WD=0.2 + dropout=0.0
+080d577	3.846132	1.157457	5.645208	16.3	keep	WD=0.0 + Muon LR=0.08
+7f14979	3.812866	1.140615	5.653585	16.3	keep	WD=0.0 + Muon WD=0.2 + Muon LR=0.08
+8c56404	3.825568	1.143264	5.682183	16.3	keep	all WD=0.0 (no regularization)
+acf0070	3.819648	1.143897	5.653376	16.3	keep	best + Muon WD=0.15
+f85e2a8	3.824194	1.144031	5.670663	16.3	keep	best + Muon WD=0.1
+27a54ea	3.800556	1.140680	5.604419	16.3	keep	best + dropout=0.02
+e956d27	3.796650	1.137283	5.616975	16.3	keep	best + dropout=0.0
+4b18a69	3.829052	1.142867	5.699490	16.3	keep	best + Adam betas (0.85, 0.95)
+54853ae	3.832780	1.147544	5.675318	16.3	keep	best + Adam betas (0.9, 0.95)
+0d08d0a	3.824332	1.143309	5.676920	16.3	keep	best + warmdown=0.6
+34d6d66	3.834017	1.146620	5.687903	16.3	keep	best + warmdown=0.8
+74a73fe	3.834248	1.148412	5.673825	16.3	keep	H8: NS steps=3
+035c58d	3.797251	1.139701	5.599023	16.3	keep	H8: NS steps=7
+eaeae6b	3.793706	1.136129	5.615170	16.3	keep	H8: NS steps=10
+2266c71	3.792379	1.134311	5.624890	16.3	keep	H9: coupled warmdown (WD*lrm)
+061a08f	3.813474	1.137907	5.678964	16.3	keep	H9: sqrt-coupled warmdown
+aa122cb	0	0	0	16.3	crash	H10: weight-tied lm_head
+d63b18b	3.803168	1.137260	5.643327	16.3	keep	Muon WD linear decay to 0
+206b6fa	3.805799	1.137652	5.650560	16.3	keep	Muon WD cosine decay to 0
+3d29428	3.805937	1.138813	5.641262	16.3	keep	embed_lr=1.0
+bfd8aa7	3.800843	1.136730	5.638514	16.3	keep	embed_lr=0.5
+f0d93ea	3.799652	1.139863	5.607481	16.3	keep	embed_lr=0.3
+a704fc6	3.793473	1.137518	5.602490	16.3	keep	softcap=20
+dbad8f6	3.794161	1.136852	5.610580	16.3	keep	softcap=10
+18fdb6b	3.793245	1.138801	5.590405	16.3	keep	softcap=30
+7ead897	3.812800	1.140301	5.656321	16.3	keep	Muon LR=0.05
+4f6ca0b	3.795459	1.136701	5.617088	16.3	keep	Muon LR=0.07
+70d2fd4	3.984591	1.194333	5.888354	16.3	keep	batch 512K
+b76b551	3.731775	1.119316	5.508643	16.3	keep	batch 128K
+625b10c	3.803908	1.141214	5.613016	16.3	keep	warmdown=0.5
+e0bfe0e	3.814113	1.141407	5.652007	16.3	keep	warmdown=0.9
+fd09d0b	3.861422	1.140243	5.851021	16.3	keep	H3: lazy WD (audio WD=0.5, only updated rows)
+775df8b	3.783387	1.133403	5.596346	16.3	keep	H1: freq-proportional WD C=0.5
+30f702e	3.791147	1.134835	5.615320	16.3	keep	H1: freq-proportional WD C=1.0
+43eae09	3.802564	1.134829	5.661307	16.3	keep	H1: freq-proportional WD C=2.0
+a3b5529	3.814552	1.140711	5.659597	16.3	keep	depth=10 AR=48 (wider attention)
+c6e29ac	3.896169	1.166480	5.769514	16.3	keep	depth=6 AR=88 (shallower+wider)
+46be10b	3.858345	1.148957	5.765621	16.3	keep	depth=12 AR=40 (deep+narrow)
+7cdbc14	3.801588	1.136278	5.645191	16.3	keep	Muon momentum peak=0.90
+8f81e51	3.830501	1.146177	5.677659	16.3	keep	Muon momentum peak=0.98
+b750895	3.806181	1.131880	5.700493	16.3	keep	unembed_lr=0.008
+a7ae492	3.829178	1.149580	5.643565	16.3	keep	unembed_lr=0.002
+9e2e849	3.782888	1.130965	5.615031	16.3	keep	x0_lambda_init=0.2
+9ebdc92	3.781610	1.131988	5.601270	16.3	keep	x0_lambda_init=0.05
+ea0b0c7	3.865026	1.152640	5.761113	16.3	keep	GELU activation (instead of ReLU^2)
+c0066b1	3.866288	1.152056	5.771056	16.3	keep	SiLU activation (instead of ReLU^2)
+7b8895d	3.745052	1.127346	5.494001	16.3	keep	batch 64K
+aa909d2	3.738697	1.123520	5.501000	16.3	keep	batch 96K (3*32K)
+a7a66e7	3.740510	1.120120	5.536959	16.3	keep	batch128K + coupled WD
+01b8221	3.723999	1.118974	5.480351	16.3	keep	batch128K + NS10
+96019b4	3.738136	1.122162	5.510242	16.3	keep	batch128K + MuonLR0.07
+8ec42b5	3.727491	1.118052	5.502141	16.3	keep	batch128K + coupledWD + NS10
+37e1ecc	3.732165	1.120269	5.502353	16.3	keep	batch128K + coupledWD + NS10 + LR0.07
+d6072f2	3.731133	1.115924	5.534722	16.3	keep	batch128K + MuonWD=0.1
+1b0bc04	3.742291	1.126539	5.490147	16.3	keep	batch128K + MuonWD=0.3
+06b10b8	3.731612	1.119524	5.506530	16.3	keep	batch128K + MuonWD=0.15
+d4e6bbf	3.758914	1.119663	5.614390	16.3	keep	batch128K + embedWD=0.1
+0db6a84	3.819542	1.124374	5.817526	16.3	keep	batch128K + embedWD=0.5
+73a9368	3.750451	1.126190	5.525682	16.3	keep	batch128K + warmdown=0.5
+6385777	3.733772	1.117866	5.529061	16.3	keep	batch128K + warmdown=0.8
+f26afc1	0	0	0	16.3	crash	batch128K + weight-tied (via init)
+654f327	3.726631	1.119795	5.484202	16.3	keep	batch128K + embedLR=0.6
+bb2d2cb	3.734867	1.120869	5.508212	16.3	keep	batch128K + embedLR=1.0
+0d5c7cb	3.730435	1.119053	5.505746	16.3	keep	batch128K+NS10+embedLR0.6
+f26c0c5	3.730732	1.119007	5.507201	16.3	keep	batch128K+NS10+x0=0.05
+eec4299	3.727555	1.120119	5.485105	16.3	keep	batch128K+NS10+eLR0.6+x0=0.05
+4cfd73e	3.735562	1.120326	5.515361	16.3	keep	batch128K+NS10+freqWD
+40febaa	3.728435	1.117077	5.514199	16.3	keep	MEGA: b128K+NS10+eLR0.6+x0+fWD
+1bced87	3.724928	1.114828	5.518869	16.3	keep	batch128K+NS10+MuonWD0.1
+720806c	3.716762	1.113566	5.496798	16.3	keep	batch128K+NS10+MuonWD0.15
+a98e743	3.724073	1.115264	5.512034	16.3	keep	FULL: b128K+NS10+eLR0.6+x0+WD0.15
+9835e21	3.720689	1.115351	5.497651	16.3	keep	FULL+coupledWD
+4e0cf2a	3.731237	1.119975	5.501163	16.3	keep	batch128K+NS15
+0a0bb58	3.738496	1.121084	5.520977	16.3	keep	batch128K+NS20
+6be5d8a	3.731736	1.119961	5.503046	16.3	keep	batch128K+NS10+MuonLR0.04
+fc73bb7	3.747142	1.121230	5.554276	16.3	keep	batch128K+NS10+MuonLR0.05

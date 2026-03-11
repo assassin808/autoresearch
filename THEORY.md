@@ -321,3 +321,47 @@ parameter count — it's about whether the tug-of-war is hurting audio:
 3. Core finding: regularization compensates for data scarcity, not model size
 4. Muon's NS as an implicit multi-modal gradient balancer
 5. Practical recipes: lazy WD, frequency-proportional WD, decoupled embeddings
+
+---
+
+## Part 5: Experimental Results (120+ experiments)
+
+### Hypothesis test results
+
+| Hypothesis | Result | val_loss | Verdict |
+|------------|--------|----------|---------|
+| **H1: Freq-proportional WD C=0.5** | **3.783** | -0.014 | **CONFIRMED** — best embed WD scheme |
+| H1: C=1.0 | 3.791 | -0.006 | also good |
+| H1: C=2.0 | 3.803 | +0.006 | too much WD |
+| H3: Lazy WD (audio WD=0.5) | 3.861 | +0.064 | FAIL — moot since WD=0 is optimal |
+| H8: NS steps=3 | 3.834 | +0.037 | fewer NS hurts |
+| H8: NS steps=7 | 3.797 | 0.000 | same as 5 |
+| **H8: NS steps=10** | **3.794** | **-0.003** | **small improvement** |
+| **H9: Coupled warmdown (WD*lrm)** | **3.792** | **-0.005** | **CONFIRMED** — WD should decay with LR |
+| H9: sqrt-coupled | 3.813 | +0.016 | linear coupling is better |
+| H10: Weight tying | CRASH | - | needs different implementation |
+
+### Batch size is the biggest lever
+
+| Batch size | val_loss | Steps | Verdict |
+|-----------|---------|-------|---------|
+| 512K | 3.985 | ~183 | too few steps |
+| **128K** | **3.732** | **~732** | **BEST — 2x more steps** |
+| 256K (baseline) | 3.797 | ~366 | good |
+
+Smaller batch = more optimizer steps in fixed wall time = better. This is the
+single largest improvement found in all experiments.
+
+### Other notable findings (sweep7)
+
+| Change | val_loss | Verdict |
+|--------|----------|---------|
+| **x0_lambda_init=0.05** | **3.782** | **stronger residual helps** |
+| x0_lambda_init=0.2 | 3.783 | also good |
+| GELU activation | 3.865 | ReLU^2 is better |
+| SiLU activation | 3.866 | ReLU^2 is better |
+| depth=10 AR=48 | 3.815 | worse at this budget |
+| depth=6 AR=88 | 3.896 | much worse |
+| depth=12 AR=40 | 3.858 | worse |
+| Muon momentum=0.90 | 3.802 | slightly worse |
+| Muon WD linear decay | 3.803 | worse than coupled warmdown |
