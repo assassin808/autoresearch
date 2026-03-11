@@ -513,7 +513,7 @@ SCALAR_LR = 0.5         # learning rate for per-layer scalars (Adam)
 WEIGHT_DECAY = 0.2      # Muon WD — tuned down from 0.5 with more data
 ADAM_BETAS = (0.8, 0.95) # Adam beta1, beta2
 WARMUP_RATIO = 0.0      # fraction of time budget for LR warmup
-WARMDOWN_RATIO = 0.9    # fraction of time budget for LR warmdown — was 0.5
+WARMDOWN_RATIO = 0.7    # fraction of time budget for LR warmdown — was 0.5
 FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
 # Experiment flags (enable one at a time for testing)
 AUDIO_UPWEIGHT_SCHEDULE = False  # H2: progressively upweight audio loss
@@ -580,7 +580,7 @@ grad_accum_steps = TOTAL_BATCH_SIZE // tokens_per_fwdbwd
 # Text tokens (0..AUDIO_START_ID-1): low WD (frequently updated, need rich representations)
 # Audio tokens (AUDIO_START_ID..vocab_size-1): high WD (rare, need regularization)
 EMBED_WD_TEXT = 0.0       # WD for text embeddings (lower = less regularization)
-EMBED_WD_AUDIO = 0.0      # WD for audio embeddings (0.0 optimal with 115h data)
+EMBED_WD_AUDIO = 0.5  # H3: test lazy WD with moderate WD      # WD for audio embeddings (0.0 optimal with 115h data)
 embed_wd_per_row = torch.ones(vocab_size, 1, device=device)
 embed_wd_per_row[:AUDIO_START_ID] = EMBED_WD_TEXT
 embed_wd_per_row[AUDIO_START_ID:] = EMBED_WD_AUDIO
@@ -611,6 +611,7 @@ optimizer = model.setup_optimizer(
     embed_lr_per_row=embed_lr_per_row,
 )
 
+model._lazy_wd_mask = torch.ones(vocab_size, 1, device="cuda")
 model = torch.compile(model, dynamic=False)
 
 train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
@@ -656,6 +657,12 @@ while True:
         loss = loss / grad_accum_steps
         loss.backward()
         x, y, epoch = next(train_loader)
+        # H3: Track tokens in batch for lazy WD
+        if hasattr(model, '_lazy_wd_mask'):
+            batch_tokens = torch.cat([x.reshape(-1), y.reshape(-1)]).unique()
+            lazy_mask = torch.zeros(vocab_size, 1, device="cuda")
+            lazy_mask[batch_tokens] = 1.0
+            model._lazy_wd_mask = lazy_mask
 
     # H2: Progressive audio upweighting
     if AUDIO_UPWEIGHT_SCHEDULE:
@@ -750,6 +757,12 @@ while True:
         if group['kind'] == 'muon':
             group["momentum"] = muon_momentum
             group["weight_decay"] = muon_weight_decay
+    # H3: Lazy WD — only decay rows that were updated
+    if hasattr(model._orig_mod, '_lazy_wd_mask'):
+        lazy_mask = model._orig_mod._lazy_wd_mask
+        for group in optimizer.param_groups:
+            if group.get('wd_per_row') is not None:
+                group['wd_per_row'] = embed_wd_per_row * lazy_mask
     optimizer.step()
     model.zero_grad(set_to_none=True)
 
