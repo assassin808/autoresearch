@@ -207,3 +207,26 @@ bfec329	3.546088	1.095776	5.591788	16.3	keep	warmdown0.8+ratio0.2+WD0.1
 ad97bef	8.476547	2.944989	9.393392	16.3	keep	audioLR_low+ratio0.2+WD0.1
 8c83f3b	3.390126	1.085107	5.817470	16.3	keep	ratio0.15+WD0.1+coupledWD
 5057180	3.520823	1.090193	5.524445	16.3	keep	batch64K+NS10+ratio0.2+WD0.1
+1eb07b1	3.532711	1.094078	5.540975	16.3	keep	baseline: text0.8+audio0.2
+3258a7a	3.727790	1.193198	5.375937	16.3	keep	omni: t0.4+a0.2+tts0.2+asr0.2
+d758e27	3.640493	1.152315	5.408433	16.3	keep	omni: t0.5+a0.1+tts0.2+asr0.2
+c5a5b37	3.606380	1.135437	5.430890	16.3	keep	tts_cross: t0.5+a0.1+tts0.3+asr0.1
+70c8390	3.594892	1.131950	5.411705	16.3	keep	asr_cross: t0.5+a0.1+tts0.1+asr0.3
+ae7081b	3.830202	1.239112	5.364476	16.3	keep	heavy_cross: t0.2+a0.1+tts0.35+asr0.35
+4ef46e2	3.700699	1.184760	5.334709	16.3	keep	omni+coupledWD: t0.4+a0.2+tts0.2+asr0.2
+ada64b5	3.707749	1.186651	5.348977	16.3	keep	omni+mom0.98: t0.4+a0.2+tts0.2+asr0.2
+0d0cef4	19.801970	8.236006	5.430488	16.3	keep	pure_cross: tts0.5+asr0.5
+68f3166	3.609629	1.135213	5.451202	16.3	keep	text_heavy_omni: t0.6+tts0.2+asr0.2
+b4cde3a	0	0	0	16.3	crash	omni_high_text: t0.7+tts0.15+asr0.15
+93043ee	3.570794	1.109811	5.552879	16.3	keep	omni_high_text: t0.7+tts0.15+asr0.15
+c398e06	3.546124	1.100529	5.534259	16.3	keep	omni_ht+coupledWD: t0.7+tts0.15+asr0.15
+fcae0f5	3.634417	1.149566	5.409004	16.3	keep	omni+gradbal: t0.5+a0.1+tts0.2+asr0.2
+8ab9471	3.626271	1.146520	5.402414	16.3	keep	omni+rebal: t0.5+a0.1+tts0.2+asr0.2
+21f5418	3.656390	1.158876	5.413326	16.3	keep	omni+matLR0.08: t0.5+a0.1+tts0.2+asr0.2
+07e5182	3.599352	1.134787	5.401766	16.3	keep	omni+WD0.05: t0.5+a0.1+tts0.2+asr0.2
+9b83c54	3.618628	1.143984	5.393111	16.3	keep	omni+mom98+cWD: t0.5+a0.1+tts0.2+asr0.2
+a67ef94	0	0	0	16.3	crash	omni+cmw0.5: t0.5+a0.1+tts0.2+asr0.2
+9de22ca	0	0	0	16.3	crash	omni+depth10: t0.5+a0.1+tts0.2+asr0.2
+060c6c0	3.581497	1.121498	5.467954	16.3	keep	omni_light_audio: t0.65+a0.05+tts0.15+asr0.15
+f0bf222	3.552581	1.102125	5.549506	16.3	keep	omni_best: t0.7+tts0.15+asr0.15+cWD+m98
+f2291e3	3.632481	1.140459	5.509862	16.3	keep	omni+cmw0.3: t0.5+a0.1+tts0.2+asr0.2
