@@ -685,7 +685,8 @@ def _paired_document_batches(split, tokenizer, batch_size=64, mode="tts"):
 
 
 def make_omni_dataloader(tokenizer, B, T, split, buffer_size=1000,
-                         text_ratio=0.4, audio_ratio=0.2, tts_ratio=0.2, asr_ratio=0.2):
+                         text_ratio=0.4, audio_ratio=0.2, tts_ratio=0.2, asr_ratio=0.2,
+                         cross_modal_weight=1.0):
     """
     Omni dataloader with 4 training modes:
     - text_ratio: fraction of rows with pure text
@@ -805,7 +806,11 @@ def make_omni_dataloader(tokenizer, B, T, split, buffer_size=1000,
         cpu_inputs.copy_(row_buffer[:, :-1])
         cpu_targets.copy_(row_buffer[:, 1:])
         gpu_buffer.copy_(cpu_buffer, non_blocking=True)
-        yield inputs, targets, epoch
+        # Build row weight tensor: 1.0 for text/audio, cross_modal_weight for TTS/ASR
+        row_weights = torch.ones(B, device="cuda")
+        if n_tts + n_asr > 0:
+            row_weights[n_text + n_audio:] = cross_modal_weight
+        yield inputs, targets, epoch, row_weights
 
 
 # ---------------------------------------------------------------------------
