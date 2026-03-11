@@ -291,7 +291,7 @@ class GPT(nn.Module):
             group_params = [p for p in matrix_params if p.shape == shape]
             param_groups.append(dict(
                 kind='muon', params=group_params, lr=matrix_lr,
-                momentum=0.95, ns_steps=10, beta2=0.95, weight_decay=weight_decay,
+                momentum=0.98, ns_steps=10, beta2=0.95, weight_decay=weight_decay,
             ))
         optimizer = MuonAdamW(param_groups)
         for group in optimizer.param_groups:
@@ -584,13 +584,7 @@ EMBED_WD_AUDIO = 0.0      # WD for audio embeddings (0.0 optimal with 115h data)
 embed_wd_per_row = torch.ones(vocab_size, 1, device=device)
 embed_wd_per_row[:AUDIO_START_ID] = EMBED_WD_TEXT
 embed_wd_per_row[AUDIO_START_ID:] = EMBED_WD_AUDIO
-import math
-FREQ_WD_C = 0.5
-text_est_freq = 8260.0
-audio_est_freq = 2360.0
-embed_wd_per_row[:AUDIO_START_ID] = FREQ_WD_C / math.sqrt(text_est_freq)
-embed_wd_per_row[AUDIO_START_ID:] = FREQ_WD_C / math.sqrt(audio_est_freq)
-print(f"Freq-proportional WD: text={embed_wd_per_row[0].item():.4f}, audio={embed_wd_per_row[AUDIO_START_ID].item():.4f}")
+print(f"Per-row WD: text={EMBED_WD_TEXT}, audio={EMBED_WD_AUDIO}")
 
 # H4: Per-row adaptive LR for embeddings
 # Audio tokens are seen less frequently → use higher LR to compensate
