@@ -18,7 +18,7 @@ import torch.nn.functional as F
 
 from torch.nn.attention.flex_attention import flex_attention, create_block_mask
 
-from prepare import MAX_SEQ_LEN, TIME_BUDGET, TOTAL_VOCAB_SIZE, AUDIO_START_ID, Tokenizer, make_dataloader, evaluate_val_loss
+from prepare import MAX_SEQ_LEN, TIME_BUDGET, TOTAL_VOCAB_SIZE, AUDIO_START_ID, Tokenizer, make_dataloader, make_omni_dataloader, evaluate_val_loss
 
 # ---------------------------------------------------------------------------
 # GPT Model
@@ -506,7 +506,7 @@ WINDOW_PATTERN = "LLLL" # all full attention — sliding window not needed at 20
 
 # Optimization
 TOTAL_BATCH_SIZE = 2**16 # ~128K tokens per optimizer step (more steps > gradient quality)
-EMBEDDING_LR = 1.0      # learning rate for token embeddings (Adam)
+EMBEDDING_LR = 0.8      # learning rate for token embeddings (Adam)
 UNEMBEDDING_LR = 0.004  # learning rate for lm_head (Adam)
 MATRIX_LR = 0.06        # learning rate for matrix parameters (Muon) — was 0.05
 SCALAR_LR = 0.5         # learning rate for per-layer scalars (Adam)
@@ -613,8 +613,8 @@ optimizer = model.setup_optimizer(
 
 model = torch.compile(model, dynamic=False)
 
-train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
-x, y, epoch = next(train_loader)  # prefetch first batch
+train_loader = make_omni_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train", text_ratio=0.65, audio_ratio=0.0, tts_ratio=0.175, asr_ratio=0.175)
+x, y, epoch, _rw = next(train_loader)  # prefetch first batch
 
 print(f"Time budget: {TIME_BUDGET}s")
 print(f"Gradient accumulation steps: {grad_accum_steps}")
@@ -655,7 +655,7 @@ while True:
         train_loss = loss.detach()
         loss = loss / grad_accum_steps
         loss.backward()
-        x, y, epoch = next(train_loader)
+        x, y, epoch, _rw = next(train_loader)
 
     # H2: Progressive audio upweighting
     if AUDIO_UPWEIGHT_SCHEDULE:
