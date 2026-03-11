@@ -577,3 +577,90 @@ step size is already correct.
 | H4 | ESS explains convergence gap | UNTESTED | Diagnostic data supports theory |
 | H5 | Modality competition in residual stream | UNTESTED | Requires hidden state analysis |
 | H7 | Decoupled embed_dim | UNTESTED | Architecture change too complex for sweep |
+
+---
+
+## Part 8: Cross-Modal Omni Training (Sweeps 14-16)
+
+### The Cross-Modal Tradeoff
+
+We built a full omni training pipeline with 4 data modes:
+- **Text-only**: pure text next-token prediction
+- **Audio-only**: SNAC audio token prediction
+- **TTS pairs**: text → audio transition sequences (LibriSpeech transcripts)
+- **ASR pairs**: audio → text transition sequences
+
+Paired data: 28,539 train pairs (100.6h) + 2,683 val pairs (5.2h) from LibriSpeech train-clean-100.
+
+### Sweep 14: Cross-Modal Data Mixing (10 experiments)
+
+**Key finding: Cross-modal training ALWAYS improves audio but hurts text.**
+
+| val_loss | text_bpb | audio | config |
+|---|---|---|---|
+| **3.533** | **1.094** | 5.541 | baseline (t0.8+a0.2, no cross-modal) |
+| 3.595 | 1.132 | 5.412 | asr_cross (t0.5+a0.1+tts0.1+asr0.3) |
+| 3.606 | 1.135 | 5.431 | tts_cross (t0.5+a0.1+tts0.3+asr0.1) |
+| 3.701 | 1.185 | **5.335** | omni+coupledWD (t0.4+a0.2+tts0.2+asr0.2) |
+| 3.830 | 1.239 | 5.364 | heavy_cross (t0.2+a0.1+tts0.35+asr0.35) |
+| 19.802 | 8.236 | 5.431 | pure_cross (CATASTROPHIC — no standalone text/audio) |
+
+**Insights:**
+1. Audio loss improves 3-4% with cross-modal data (5.54→5.33)
+2. Text quality degrades roughly proportionally to text ratio reduction
+3. ASR slightly outperforms TTS for both metrics
+4. Pure cross-modal (no standalone text/audio) is catastrophic for text
+5. Coupled WD achieves best audio loss in this sweep
+
+### Sweep 15: Optimizer Solutions for Cross-Modal Convergence (12 experiments)
+
+**Question: Can optimizer modifications minimize text degradation from cross-modal training?**
+
+| val_loss | text_bpb | audio | config |
+|---|---|---|---|
+| **3.546** | **1.101** | 5.534 | omni_ht+coupledWD (t0.7+tts0.15+asr0.15) |
+| 3.553 | 1.102 | 5.550 | omni_best (t0.7+cWD+mom0.98) |
+| 3.599 | 1.135 | 5.402 | omni+WD0.05 |
+| 3.619 | 1.144 | **5.393** | omni+mom98+cWD (best audio) |
+| 3.626 | 1.147 | 5.402 | omni+rebal (H6) |
+| 3.632 | 1.141 | 5.510 | omni+cmw0.3 (cross-modal loss downweight) |
+| 3.634 | 1.150 | 5.409 | omni+gradbal (H3) |
+| 3.656 | 1.159 | 5.413 | omni+matLR0.08 (higher LR, worse) |
+
+**Key findings:**
+1. **Coupled WD + high text ratio (t0.7) nearly eliminates text penalty**: only 0.013 val_loss worse than baseline
+2. Lower WD (0.05) beneficial for omni training — less regularization needed with diverse data
+3. Gradient manipulation (H3, H6) doesn't help with cross-modal specifically
+4. Higher Muon LR hurts — the default 0.06 is already well-tuned
+5. Cross-modal loss downweighting (cmw0.3) preserves text but kills the audio benefit
+
+### Emerging Theory: Why Cross-Modal Training Helps Audio
+
+The cross-modal data (TTS/ASR pairs) creates sequences where the model must predict
+transitions between text and audio tokens. This forces the shared backbone to learn
+representations that bridge both modalities, which:
+
+1. **Regularizes audio embeddings**: The text→audio and audio→text transitions provide
+   additional gradient signal to audio tokens, reducing the effective sample size gap
+2. **Couples modality representations**: The backbone can't rely on modality-specific
+   features at transition boundaries, promoting shared representations
+3. **Acts as auxiliary loss**: Similar to multi-task learning, cross-modal prediction
+   provides complementary training signal
+
+The text quality penalty comes from "dilution" — fewer pure text training steps means
+less text-specific optimization. But optimizer improvements (coupled WD, lower WD)
+compensate by making each step more effective.
+
+### Pareto Frontier: Text vs Audio Quality
+
+```
+text_bpb  |  audio_loss  |  configuration
+1.094     |  5.541       |  baseline (no cross-modal)
+1.101     |  5.534       |  t0.7 + coupledWD (best text + some audio gain)
+1.135     |  5.402       |  t0.5 + WD0.05 (balanced)
+1.144     |  5.393       |  t0.5 + mom98 + coupledWD (best audio)
+1.239     |  5.364       |  heavy cross-modal (audio-focused)
+```
+
+The gap from 1.094→1.101 text_bpb costs only 0.007 text quality to gain cross-modal capability.
+This is the "sweet spot" for practical omni models.
