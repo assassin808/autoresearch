@@ -613,6 +613,11 @@ optimizer = model.setup_optimizer(
 
 model = torch.compile(model, dynamic=False)
 
+
+# Convergence logging: evaluate val loss every EVAL_INTERVAL_STEPS steps
+EVAL_INTERVAL_STEPS = 50
+convergence_log = []
+
 train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
 x, y, epoch = next(train_loader)  # prefetch first batch
 
@@ -786,6 +791,25 @@ while True:
     elif (step + 1) % 5000 == 0:
         gc.collect()
 
+
+    # Convergence checkpoint logging
+    if step > 10 and step % EVAL_INTERVAL_STEPS == 0:
+        model.eval()
+        with torch.no_grad():
+            with autocast_ctx:
+                _vl, _tb, _al = evaluate_val_loss(model, tokenizer, DEVICE_BATCH_SIZE)
+            convergence_log.append({
+                "step": step,
+                "time": total_training_time,
+                "progress": progress,
+                "val_loss": _vl,
+                "text_bpb": _tb,
+                "audio_loss": _al,
+                "train_loss": debiased_smooth_loss,
+            })
+            print(f"  [EVAL step={step} t={total_training_time:.0f}s] val={_vl:.4f} text={_tb:.4f} audio={_al:.4f}")
+        model.train()
+
     step += 1
 
     # Time's up — but only stop after warmup steps so we don't count compilation
@@ -800,6 +824,13 @@ total_tokens = step * TOTAL_BATCH_SIZE
 model.eval()
 with autocast_ctx:
     val_loss, text_bpb, audio_loss = evaluate_val_loss(model, tokenizer, DEVICE_BATCH_SIZE)
+
+
+# Save convergence log
+import json
+with open("convergence_log.json", "w") as f:
+    json.dump(convergence_log, f)
+print(f"convergence_points: {len(convergence_log)}")
 
 # Final summary
 t_end = time.time()
