@@ -850,3 +850,50 @@ Training dynamics with 45 evaluation points per run reveal:
 
 The convergence curves confirm that the optimizer improvements are not lucky
 final evaluations — they represent a genuine improvement in training trajectory.
+
+---
+
+## Part 11: LR-Batch Size Interaction & Updated Best Recipe (Sweeps 23-26, 330+ experiments)
+
+### Critical Finding: LR and Batch Size Are Coupled
+
+With the original batch=128K, Muon LR=0.06 was optimal across all configurations.
+When we reduced batch to 64K (more optimizer steps per wall-time):
+
+| batch | LR | val_loss | steps/5min |
+|---|---|---|---|
+| 128K | 0.06 | 3.518 | ~2,200 |
+| 128K | 0.04 | 3.503 | ~2,200 |
+| **64K** | **0.04** | **3.478** | ~4,400 |
+| **64K** | **0.03** | **3.468** | ~4,400 |
+| 64K | 0.025 | **3.466** | ~4,400 |
+| 64K | 0.02 | 3.476 | ~4,400 |
+
+**The optimal LR decreases with batch size** — consistent with the sqrt scaling law
+(halve batch → multiply LR by ~0.7). Going from 128K×0.06 to 64K×0.03 is approximately
+a sqrt(2) reduction.
+
+### Updated Best Recipe (sweep 26, 330+ experiments)
+
+```
+TOTAL_BATCH_SIZE = 64K     # (was 128K) — more optimizer steps
+MATRIX_LR = 0.025-0.03     # (was 0.06) — lower LR with smaller batch
+WEIGHT_DECAY = 0.03-0.05   # (was 0.1) — less regularization
+WARMDOWN_RATIO = 0.75-0.8  # (was 0.7) — longer cooldown
+momentum = 0.97            # (was 0.95)
+coupled WD: WD decays with LR during warmdown
+
+Result (5min): val_loss ≈ 3.466, text_bpb ≈ 1.066, audio_loss ≈ 5.53
+Improvement over original: -1.9% val_loss, -2.6% text_bpb
+```
+
+### Updated Scaling with Training Duration
+
+| Duration | Best | Baseline | Δ | Improvement |
+|---|---|---|---|---|
+| 5 min | 3.466 | 3.535 | -0.069 | 2.0% |
+| 10 min | 3.363 | 3.415 | -0.052 | 1.5% |
+
+The improvement at 10 min has grown from the initial 1.3% (sweep22) to 1.5% with
+the updated recipe, confirming that more aggressive optimizer tuning continues to
+help at longer durations.
