@@ -291,7 +291,7 @@ class GPT(nn.Module):
             group_params = [p for p in matrix_params if p.shape == shape]
             param_groups.append(dict(
                 kind='muon', params=group_params, lr=matrix_lr,
-                momentum=0.96, ns_steps=10, beta2=0.95, weight_decay=weight_decay,
+                momentum=0.95, ns_steps=10, beta2=0.95, weight_decay=weight_decay,
             ))
         optimizer = MuonAdamW(param_groups)
         for group in optimizer.param_groups:
@@ -510,7 +510,7 @@ EMBEDDING_LR = 0.8      # learning rate for token embeddings (Adam)
 UNEMBEDDING_LR = 0.004  # learning rate for lm_head (Adam)
 MATRIX_LR = 0.03        # learning rate for matrix parameters (Muon) — sweep25: 0.03 > 0.04 with 64K batch
 SCALAR_LR = 0.5         # learning rate for per-layer scalars (Adam)
-WEIGHT_DECAY = 0.05    # Muon WD — tuned: 0.5→0.2→0.1→0.05 (sweep16: less reg with diverse data)
+WEIGHT_DECAY = 0.03    # Muon WD — tuned: 0.5→0.2→0.1→0.05 (sweep16: less reg with diverse data)
 ADAM_BETAS = (0.8, 0.95) # Adam beta1, beta2
 WARMUP_RATIO = 0.0      # fraction of time budget for LR warmup
 WARMDOWN_RATIO = 0.75   # fraction of time budget for LR warmdown — was 0.5→0.7→0.75
@@ -632,7 +632,7 @@ def get_lr_multiplier(progress):
 
 def get_muon_momentum(step):
     frac = min(step / 300, 1)
-    return (1 - frac) * 0.85 + frac * 0.96
+    return (1 - frac) * 0.85 + frac * 0.95
 
 def get_weight_decay(progress):
     return WEIGHT_DECAY * get_lr_multiplier(progress)  # coupled WD (sweep16: decays with LR)
