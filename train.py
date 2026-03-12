@@ -291,7 +291,7 @@ class GPT(nn.Module):
             group_params = [p for p in matrix_params if p.shape == shape]
             param_groups.append(dict(
                 kind='muon', params=group_params, lr=matrix_lr,
-                momentum=0.95, ns_steps=10, beta2=0.95, weight_decay=weight_decay,
+                momentum=0.97, ns_steps=10, beta2=0.95, weight_decay=weight_decay,
             ))
         optimizer = MuonAdamW(param_groups)
         for group in optimizer.param_groups:
@@ -505,15 +505,15 @@ HEAD_DIM = 128          # target head dimension for attention
 WINDOW_PATTERN = "LLLL" # all full attention — sliding window not needed at 2048 seq_len
 
 # Optimization
-TOTAL_BATCH_SIZE = 2**17 # ~64K tokens per optimizer step (sweep24: more steps > gradient quality)
+TOTAL_BATCH_SIZE = 2**15 # ~64K tokens per optimizer step (sweep24: more steps > gradient quality)
 EMBEDDING_LR = 0.8      # learning rate for token embeddings (Adam)
 UNEMBEDDING_LR = 0.004  # learning rate for lm_head (Adam)
-MATRIX_LR = 0.06        # learning rate for matrix parameters (Muon) — sweep25: 0.03 > 0.04 with 64K batch
+MATRIX_LR = 0.03        # learning rate for matrix parameters (Muon) — sweep25: 0.03 > 0.04 with 64K batch
 SCALAR_LR = 0.5         # learning rate for per-layer scalars (Adam)
-WEIGHT_DECAY = 0.1    # Muon WD — tuned: 0.5→0.2→0.1→0.05 (sweep16: less reg with diverse data)
+WEIGHT_DECAY = 0.05    # Muon WD — tuned: 0.5→0.2→0.1→0.05 (sweep16: less reg with diverse data)
 ADAM_BETAS = (0.8, 0.95) # Adam beta1, beta2
 WARMUP_RATIO = 0.0      # fraction of time budget for LR warmup
-WARMDOWN_RATIO = 0.7   # fraction of time budget for LR warmdown — was 0.5→0.7→0.75
+WARMDOWN_RATIO = 0.75   # fraction of time budget for LR warmdown — was 0.5→0.7→0.75
 FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
 # Experiment flags (enable one at a time for testing)
 AUDIO_UPWEIGHT_SCHEDULE = False  # H2: progressively upweight audio loss
@@ -535,8 +535,8 @@ DEVICE_BATCH_SIZE = 16   # per-device batch size (reduce if OOM)
 # ---------------------------------------------------------------------------
 
 t_start = time.time()
-torch.manual_seed(2024)
-torch.cuda.manual_seed(2024)
+torch.manual_seed(42)
+torch.cuda.manual_seed(42)
 torch.set_float32_matmul_precision("high")
 device = torch.device("cuda")
 autocast_ctx = torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
@@ -613,6 +613,10 @@ optimizer = model.setup_optimizer(
 
 model = torch.compile(model, dynamic=False)
 
+
+EVAL_INTERVAL_STEPS = 100
+convergence_log = []
+
 train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
 x, y, epoch = next(train_loader)  # prefetch first batch
 
@@ -632,10 +636,10 @@ def get_lr_multiplier(progress):
 
 def get_muon_momentum(step):
     frac = min(step / 300, 1)
-    return (1 - frac) * 0.85 + frac * 0.95
+    return (1 - frac) * 0.85 + frac * 0.97
 
 def get_weight_decay(progress):
-    return WEIGHT_DECAY  # constant WD
+    return WEIGHT_DECAY * get_lr_multiplier(progress)  # coupled WD (sweep16: decays with LR)
 
 # ---------------------------------------------------------------------------
 # Training loop
@@ -786,6 +790,16 @@ while True:
     elif (step + 1) % 5000 == 0:
         gc.collect()
 
+
+    if step > 10 and step % EVAL_INTERVAL_STEPS == 0:
+        model.eval()
+        with torch.no_grad():
+            with autocast_ctx:
+                _vl, _tb, _al = evaluate_val_loss(model, tokenizer, DEVICE_BATCH_SIZE)
+            convergence_log.append({"step": step, "time": total_training_time, "progress": progress,
+                "val_loss": _vl, "text_bpb": _tb, "audio_loss": _al, "train_loss": debiased_smooth_loss})
+        model.train()
+
     step += 1
 
     # Time's up — but only stop after warmup steps so we don't count compilation
@@ -800,6 +814,11 @@ total_tokens = step * TOTAL_BATCH_SIZE
 model.eval()
 with autocast_ctx:
     val_loss, text_bpb, audio_loss = evaluate_val_loss(model, tokenizer, DEVICE_BATCH_SIZE)
+
+
+import json
+with open("convergence_log.json", "w") as f:
+    json.dump(convergence_log, f)
 
 # Final summary
 t_end = time.time()
