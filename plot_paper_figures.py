@@ -92,16 +92,17 @@ if ablation_5min:
 # Figure 2: Best vs baseline at different durations
 # ============================================================
 
-# Collect all best-vs-baseline convergence data
+# Collect best-vs-baseline convergence data
+# Prefer paper-quality data (sweep27-28) over older sweeps
 best_curves = {}
 baseline_curves = {}
 
-for fname, data in {**long_runs, **paper_10min}.items():
+# First load older data (sweep22 long runs)
+for fname, data in long_runs.items():
     desc = data["desc"]
     c = data["curve"]
     time_min = [p["time"] / 60 for p in c]
     vl = [p["val_loss"] for p in c]
-
     if "best" in desc.lower() and "baseline" not in desc.lower():
         duration = "10min" if "10min" in desc else "20min" if "20min" in desc else "5min"
         best_curves[duration] = (time_min, vl, data["val_loss"])
@@ -109,15 +110,28 @@ for fname, data in {**long_runs, **paper_10min}.items():
         duration = "10min" if "10min" in desc else "20min" if "20min" in desc else "5min"
         baseline_curves[duration] = (time_min, vl, data["val_loss"])
 
-# Also add 5min ablation data if available
+# Then overwrite with paper-quality data (sweep27-28) where available
+for fname, data in paper_10min.items():
+    desc = data["desc"]
+    c = data["curve"]
+    time_min = [p["time"] / 60 for p in c]
+    vl = [p["val_loss"] for p in c]
+    if "best" in desc.lower() and "baseline" not in desc.lower():
+        duration = "10min" if "10min" in desc else "20min" if "20min" in desc else "5min"
+        best_curves[duration] = (time_min, vl, data["val_loss"])
+    elif "baseline" in desc.lower():
+        duration = "10min" if "10min" in desc else "20min" if "20min" in desc else "5min"
+        baseline_curves[duration] = (time_min, vl, data["val_loss"])
+
+# Add 5min ablation data only if no paper data for 5min
 for fname, data in ablation_5min.items():
     desc = data["desc"]
     c = data["curve"]
     time_min = [p["time"] / 60 for p in c]
     vl = [p["val_loss"] for p in c]
-    if "full_best" in desc:
+    if "full_best" in desc and "5min" not in best_curves:
         best_curves["5min"] = (time_min, vl, data["val_loss"])
-    elif "original_baseline" in desc:
+    elif "original_baseline" in desc and "5min" not in baseline_curves:
         baseline_curves["5min"] = (time_min, vl, data["val_loss"])
 
 if best_curves or baseline_curves:

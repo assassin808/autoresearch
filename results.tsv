@@ -348,3 +348,6 @@ eede4f7	3.476045	1.071794	5.509813	16.3	keep	paper: best_5min_s42
 a391281	3.547494	1.097554	5.577388	16.3	keep	paper: baseline_5min_s2024
 5c19672	0	0	0	16.3	crash	paper: best_10min_conv
 ffe7dfa	3.405283	1.049870	5.398770	16.3	keep	paper: baseline_10min_conv
+13cebc6	3.367959	1.027758	5.468935	16.3	keep	paper: best_10min_conv
+88bbefa	3.298953	1.000188	5.435978	16.3	keep	paper: best_20min_conv
+7e25baf	3.334075	1.017993	5.407047	16.3	keep	paper: baseline_20min_conv
