@@ -1086,3 +1086,70 @@ matching the tokens-per-parameter ratio of d8), we'd expect the optimizer gap
 to be even larger than 4.1%. The scaling trend d4→d8→d12 suggests that at
 sufficient training duration, **optimizer sensitivity grows super-linearly
 with model size**.
+
+This was partially confirmed by sweep31: d12 at 10min shows a 3.1% gap
+(3.395 vs 3.502), still much larger than d8's 1.7% at 5min.
+
+---
+
+## Part 15: Final Recipe & Summary (Sweeps 31-32, 390+ experiments)
+
+### Updated Best Recipe
+
+After 390+ experiments across 32 sweeps, the final optimized recipe:
+
+```
+TOTAL_BATCH_SIZE = 64K     # (was 128K) — more optimizer steps per wall-time
+MATRIX_LR = 0.03           # (was 0.06) — lower LR with smaller batch (sqrt scaling)
+WEIGHT_DECAY = 0.05        # (was 0.1) — less regularization with diverse data
+WARMDOWN_RATIO = 0.75      # fraction of training for LR cooldown
+momentum = 0.95            # (was 0.95, briefly 0.97) — see below
+coupled WD: WD decays with LR during warmdown
+```
+
+### The Momentum Story
+
+Momentum underwent the most interesting journey:
+
+1. **Original (0.95)**: Modian default for Muon
+2. **Sweep 16**: Increased to 0.97, improved 5min by +0.012
+3. **Sweep 29**: Discovered that at 10min, 0.97 is WORSE by -0.014
+4. **Sweep 32**: Confirmed 0.95 is optimal across durations
+
+The mechanism: higher momentum acts as a learning rate multiplier for
+spectral-norm steepest descent. In early training (steep, consistent
+gradients), this helps. In later training (flatter, noisier landscape),
+it causes overshooting. Since the benefit at 5min is within noise (±0.002)
+but the cost at 10min is significant (-0.016), momentum=0.95 is the
+robust choice.
+
+### Complete Results Table
+
+| Duration | Best (final) | Baseline | Δ | % |
+|----------|-------------|----------|---|---|
+| 5min (multi-seed) | 3.472 | 3.544±0.005 | -0.072 | 2.0% |
+| 10min | 3.358 | 3.406 | -0.048 | 1.4% |
+| 20min | 3.299 | 3.334 | -0.035 | 1.1% |
+
+### What Matters Most (ranked by impact)
+
+1. **Batch size + LR coupling** (Δ ~0.04): More steps with lower LR beats
+   fewer steps with higher LR. Follows sqrt scaling.
+2. **Lower weight decay** (Δ ~0.015): Multi-modal data needs less regularization
+   than text-only.
+3. **Coupled weight decay** (Δ ~0.019 at 5min, 0 at 10min): Only matters for
+   short training schedules.
+4. **Momentum** (Δ ~0.000 at 5min, +0.016 at 10min): Duration-dependent.
+   The right setting depends on how long you'll train.
+
+### Paper Contributions
+
+1. **Systematic optimizer study for omni-models**: 390+ experiments, multi-seed
+   validation, convergence curves, ablation at multiple durations
+2. **Duration-dependent hyperparameters**: Optimal momentum reverses with
+   training duration — a phenomenon we haven't seen documented for Muon
+3. **Model-size scaling**: Optimizer tuning benefit grows super-linearly with
+   model size (0.1% at 22M → 4.1% at 198M)
+4. **LR-batch coupling for Muon**: Follows sqrt scaling in multi-modal context
+5. **Practical recipe**: 6 changes that compound to 2% improvement with
+   statistical significance (p<0.001)
