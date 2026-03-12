@@ -288,3 +288,9 @@ ef4f34a	3.528357	1.091958	5.544109	16.3	keep	ms_-lowerWD_s137
 73550e8	3.524315	1.091858	5.523086	16.3	keep	ms_-lowerWD_s2024
 9cc305a	3.180946	1.064702	6.094636	16.3	keep	audio_ratio_0.1_s42
 bc82e63	3.681414	1.101785	5.455147	16.3	keep	audio_ratio_0.3_s42
+5926e59	3.517848	1.086663	5.551686	16.3	keep	conv: full_best_5min
+006a3b4	3.534533	1.092438	5.570660	16.3	keep	conv: original_baseline_5min
+72a65bd	0	0	0	16.3	crash	conv: full_best_10min
+3e47df4	3.518196	1.088493	5.531575	16.3	keep	conv: only_coupledWD_5min
+acce7bd	3.501572	1.082585	5.514900	16.3	keep	conv: only_lowerWD_5min
+1b55e36	3.533600	1.095104	5.533092	16.3	keep	conv: only_mom97_5min
