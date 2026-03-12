@@ -762,7 +762,7 @@ while True:
             group["weight_decay"] = muon_weight_decay
 
     # === OMNI: CRAW (Convergence-Rate Adaptive Weighting) ===
-    _craw_alpha = 0.1
+    _craw_alpha = 0.3
     with torch.no_grad():
         # Get per-modality loss from last batch targets
         # (y was already consumed, use the actual train_loss as proxy)
