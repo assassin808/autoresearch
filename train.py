@@ -505,12 +505,12 @@ HEAD_DIM = 128          # target head dimension for attention
 WINDOW_PATTERN = "LLLL" # all full attention — sliding window not needed at 2048 seq_len
 
 # Optimization
-TOTAL_BATCH_SIZE = 2**15 # ~128K tokens per optimizer step (more steps > gradient quality)
+TOTAL_BATCH_SIZE = 2**16 # ~128K tokens per optimizer step (more steps > gradient quality)
 EMBEDDING_LR = 0.8      # learning rate for token embeddings (Adam)
 UNEMBEDDING_LR = 0.004  # learning rate for lm_head (Adam)
 MATRIX_LR = 0.06        # learning rate for matrix parameters (Muon) — was 0.05
 SCALAR_LR = 0.5         # learning rate for per-layer scalars (Adam)
-WEIGHT_DECAY = 0.05    # Muon WD — tuned: 0.5→0.2→0.1→0.05 (sweep16: less reg with diverse data)
+WEIGHT_DECAY = 0.03    # Muon WD — tuned: 0.5→0.2→0.1→0.05 (sweep16: less reg with diverse data)
 ADAM_BETAS = (0.8, 0.95) # Adam beta1, beta2
 WARMUP_RATIO = 0.0      # fraction of time budget for LR warmup
 WARMDOWN_RATIO = 0.75   # fraction of time budget for LR warmdown — was 0.5→0.7→0.75
@@ -622,13 +622,12 @@ print(f"Gradient accumulation steps: {grad_accum_steps}")
 # Schedules (all based on progress = training_time / TIME_BUDGET)
 
 def get_lr_multiplier(progress):
+    import math
     if progress < WARMUP_RATIO:
         return progress / WARMUP_RATIO if WARMUP_RATIO > 0 else 1.0
-    elif progress < 1.0 - WARMDOWN_RATIO:
-        return 1.0
-    else:
-        cooldown = (1.0 - progress) / WARMDOWN_RATIO
-        return cooldown * 1.0 + (1 - cooldown) * FINAL_LR_FRAC
+    # Cosine decay from 1.0 to FINAL_LR_FRAC
+    decay_progress = (progress - WARMUP_RATIO) / (1.0 - WARMUP_RATIO)
+    return FINAL_LR_FRAC + 0.5 * (1.0 - FINAL_LR_FRAC) * (1.0 + math.cos(math.pi * decay_progress))
 
 def get_muon_momentum(step):
     frac = min(step / 300, 1)
