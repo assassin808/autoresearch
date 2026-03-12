@@ -974,3 +974,61 @@ The core narrative for a NeurIPS-quality paper:
 
 4. **Results are statistically robust** — multi-seed validation shows zero overlap
    between best and baseline distributions
+
+---
+
+## Part 13: Duration-Dependent Hyperparameters (Sweep 29, 360+ experiments)
+
+### The Surprise: Optimal Momentum Depends on Training Duration
+
+We repeated the ablation study at 10 minutes (2× the 5-minute budget):
+
+| Component removed | 5min Δ | 10min Δ | Trend |
+|-------------------|--------|---------|-------|
+| − coupled WD | +0.019 | −0.001 | **Disappears** |
+| − lower WD (→0.1) | +0.015 | +0.013 | Stable |
+| − momentum (0.97→0.95) | +0.012 | **−0.014** | **Reverses** |
+| − batch 64K→128K | +0.040 | +0.034 | Stable |
+| − LR (0.03→0.06) | +0.057 | +0.036 | Shrinks |
+| Full baseline | +0.066 | +0.031 | Shrinks |
+
+Three key findings:
+
+### 1. Momentum's Role Reverses
+
+At 5 minutes, momentum=0.97 beats 0.95 by 0.012. At 10 minutes, momentum=0.95
+beats 0.97 by 0.014. This is not noise — the effect is comparable in magnitude
+but opposite in sign.
+
+**Interpretation**: Higher momentum acts like a learning rate multiplier for Muon.
+In early training, the loss landscape is steep and consistent — momentum helps
+take bigger steps. In later training, the loss landscape becomes flatter and
+noisier (especially near the optimum) — high momentum causes overshooting.
+
+This is the same phenomenon as momentum warmup, but in reverse: you want high
+momentum early and lower momentum late. The best recipe's linear momentum warmup
+from 0.85→0.97 is already the right shape, but the target should decrease with
+training duration.
+
+### 2. Coupled WD Becomes Irrelevant
+
+At 5 minutes, coupled WD (WD decays with LR during warmdown) provides +0.019.
+At 10 minutes, it provides −0.001 (nothing). This makes sense: with longer
+training, the model spends proportionally less time in the warmdown phase,
+so the WD schedule during warmdown matters less.
+
+### 3. LR-Batch Interaction Remains Dominant
+
+The batch size (64K vs 128K) and LR (0.03 vs 0.06) changes remain the most
+impactful even at 10min. These are not short-run artifacts — they represent
+a genuine difference in optimization dynamics.
+
+### Implication: Dynamic Hyperparameter Schedules
+
+The optimal configuration is **not static** — it should adapt to training duration:
+- **Momentum**: Start high, decrease to ~0.95 for longer runs
+- **Coupled WD**: Important for short runs, irrelevant for long ones
+- **Batch size + LR**: Consistently important regardless of duration
+
+This suggests a meta-learning approach: as you scale up training, re-tune the
+momentum schedule. The LR-batch coupling is robust and transfers across durations.
