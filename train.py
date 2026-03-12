@@ -528,16 +528,6 @@ MODALITY_REBALANCE_ALPHA = 0.5 # H6: strength of rebalancing
 
 # Model size
 DEPTH = 8               # number of transformer layers
-# === OMNI-OPTIMIZER STATE ===
-_omni_text_loss_ema = 0.0
-_omni_audio_loss_ema = 0.0
-_omni_prev_text_loss = 10.0
-_omni_prev_audio_loss = 10.0
-_omni_text_rate_ema = 0.0
-_omni_audio_rate_ema = 0.0
-_omni_audio_scale = 1.0
-_omni_gim_prev_grads = {}
-
 DEVICE_BATCH_SIZE = 16   # per-device batch size (reduce if OOM)
 
 # ---------------------------------------------------------------------------
@@ -760,47 +750,6 @@ while True:
         if group['kind'] == 'muon':
             group["momentum"] = muon_momentum
             group["weight_decay"] = muon_weight_decay
-
-    # === OMNI: CRAW (Convergence-Rate Adaptive Weighting) ===
-    _craw_alpha = 0.3
-    with torch.no_grad():
-        # Get per-modality loss from last batch targets
-        # (y was already consumed, use the actual train_loss as proxy)
-        _ema_beta = 0.95
-        _tl = train_loss_f  # combined loss is dominated by text (80% of batch)
-        # Approximate: text_loss ≈ train_loss * 0.9 (text is easier)
-        # audio_loss ≈ train_loss * 1.5 (audio is harder)
-        # Better: track embedding gradient norms as proxy for modality activity
-        _wte_g = model._orig_mod.transformer.wte.weight.grad
-        if _wte_g is not None:
-            _text_gnorm = _wte_g[:AUDIO_START_ID].float().norm().item()
-            _audio_gnorm = _wte_g[AUDIO_START_ID:].float().norm().item()
-            # Use gradient norm ratio as convergence rate proxy
-            _omni_text_loss_ema = _ema_beta * _omni_text_loss_ema + (1 - _ema_beta) * _text_gnorm
-            _omni_audio_loss_ema = _ema_beta * _omni_audio_loss_ema + (1 - _ema_beta) * _audio_gnorm
-            if step > 30:
-                _text_rate = abs(_omni_prev_text_loss - _omni_text_loss_ema)
-                _audio_rate = abs(_omni_prev_audio_loss - _omni_audio_loss_ema)
-                _omni_text_rate_ema = 0.9 * _omni_text_rate_ema + 0.1 * _text_rate
-                _omni_audio_rate_ema = 0.9 * _omni_audio_rate_ema + 0.1 * _audio_rate
-                if _omni_audio_rate_ema > 1e-10:
-                    _rate_ratio = _omni_text_rate_ema / max(_omni_audio_rate_ema, 1e-10)
-                    _omni_audio_scale = _omni_audio_scale * (1.0 + _craw_alpha * min(max(_rate_ratio - 1.0, -0.5), 0.5))
-                    _omni_audio_scale = max(0.3, min(5.0, _omni_audio_scale))
-            _omni_prev_text_loss = _omni_text_loss_ema
-            _omni_prev_audio_loss = _omni_audio_loss_ema
-            # Apply: scale audio embedding gradients
-            if _omni_audio_scale != 1.0:
-                _wte_g[AUDIO_START_ID:] *= _omni_audio_scale
-                _lm_g = model._orig_mod.lm_head.weight.grad
-                if _lm_g is not None:
-                    _lm_g[AUDIO_START_ID:] *= _omni_audio_scale
-                for _ve_key, _ve_embed in model._orig_mod.value_embeds.items():
-                    if _ve_embed.weight.grad is not None:
-                        _ve_embed.weight.grad[AUDIO_START_ID:] *= _omni_audio_scale
-            if step % 200 == 0 and step > 0:
-                print(f"  [CRAW] audio_scale={_omni_audio_scale:.3f} text_rate={_omni_text_rate_ema:.6f} audio_rate={_omni_audio_rate_ema:.6f}")
-
     optimizer.step()
     model.zero_grad(set_to_none=True)
 
