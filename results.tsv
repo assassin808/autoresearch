@@ -294,3 +294,7 @@ bc82e63	3.681414	1.101785	5.455147	16.3	keep	audio_ratio_0.3_s42
 3e47df4	3.518196	1.088493	5.531575	16.3	keep	conv: only_coupledWD_5min
 acce7bd	3.501572	1.082585	5.514900	16.3	keep	conv: only_lowerWD_5min
 1b55e36	3.533600	1.095104	5.533092	16.3	keep	conv: only_mom97_5min
+e55e45b	3.391047	1.041997	5.418851	16.3	keep	long: full_best_10min
+113fed1	3.435882	1.057329	5.471853	16.3	keep	long: baseline_10min
+d32eb6a	3.315923	1.010234	5.405227	16.3	keep	long: full_best_20min
+18494a5	3.378519	1.031172	5.484384	16.3	keep	long: baseline_20min
