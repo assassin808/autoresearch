@@ -1127,9 +1127,12 @@ robust choice.
 
 | Duration | Best (final) | Baseline | Δ | % |
 |----------|-------------|----------|---|---|
-| 5min (multi-seed) | 3.472 | 3.544±0.005 | -0.072 | 2.0% |
-| 10min | 3.358 | 3.406 | -0.048 | 1.4% |
+| 5min (multi-seed, n=3) | 3.467±0.004 | 3.545±0.001 | -0.078 | **2.2%** |
+| 10min (multi-seed, n=3) | 3.362±0.003 | 3.406 | -0.044 | 1.3% |
 | 20min | 3.299 | 3.334 | -0.035 | 1.1% |
+
+Statistical significance: Welch's t-test p=0.0004, Cohen's d=30.7.
+Zero overlap between distributions (worst best run < best baseline run).
 
 ### What Matters Most (ranked by impact)
 
