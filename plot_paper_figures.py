@@ -176,9 +176,9 @@ if best_curves or baseline_curves:
 # Figure 3: Multi-seed bar chart
 # ============================================================
 
-# Sweep27 paper data
-best_seeds = [3.4760, 3.4806, 3.4782]
-baseline_seeds = [3.5459, 3.5381, 3.5475]
+# Sweep33 final paper data (mom=0.95 recipe)
+best_seeds = [3.4631, 3.4681, 3.4699]
+baseline_seeds = [3.5452, 3.5444, 3.5458]
 
 best_mean, best_std = np.mean(best_seeds), np.std(best_seeds)
 baseline_mean, baseline_std = np.mean(baseline_seeds), np.std(baseline_seeds)
