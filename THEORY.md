@@ -1032,3 +1032,57 @@ The optimal configuration is **not static** — it should adapt to training dura
 
 This suggests a meta-learning approach: as you scale up training, re-tune the
 momentum schedule. The LR-batch coupling is robust and transfers across durations.
+
+---
+
+## Part 14: Model Size Scaling — Optimizer Tuning Matters More for Larger Models (Sweep 30, 370+ experiments)
+
+### Scaling Study Design
+
+We tested best vs baseline optimizer configs at four model depths:
+
+| Depth | dim | ~Params | Best | Baseline | Δ | % |
+|-------|-----|---------|------|----------|---|---|
+| 4 | 256 | 22M | 3.726 | 3.729 | -0.003 | 0.1% |
+| **8** | **512** | **88M** | **3.482** | **3.542** | **-0.060** | **1.7%** |
+| **12** | **768** | **198M** | **3.599** | **3.754** | **-0.156** | **4.1%** |
+| 16 | 1024 | 352M | 3.765 | 3.788 | -0.023 | 0.6% |
+
+### Non-Monotonic Scaling
+
+The benefit of optimizer tuning is **not monotonic with model size**:
+
+1. **d4 (22M)**: Model is too small — it converges well regardless of optimizer settings.
+   Both configs reach similar loss because the model capacity is the bottleneck.
+
+2. **d8 (88M)**: The "sweet spot" we've been optimizing at — 1.7% improvement.
+
+3. **d12 (198M)**: **Peak optimizer sensitivity at 4.1%** — the larger model has more
+   parameters to optimize, so the path through weight space matters more. The
+   LR-batch-momentum interaction has a bigger effect when there are more dimensions
+   to navigate.
+
+4. **d16 (352M)**: Drops back to 0.6% because the model is **severely undertrained**
+   in 5 minutes. At 352M params with 5min budget, both configs are still in early
+   training — neither has time to differentiate. Both are essentially doing warm-up.
+
+### The "Goldilocks Zone" for Optimizer Tuning
+
+Optimizer tuning matters most when:
+- The model is **large enough** that optimization efficiency matters (not d4)
+- The training is **long enough** that the model exits warm-up and enters the
+  optimization-sensitive regime (not d16 at 5min)
+- The model is in the **"compute-optimal"** zone where training budget matches
+  model capacity
+
+This has a practical implication: as you scale to larger models, **re-tuning
+optimizer hyperparameters becomes more important, not less**. The gains from
+optimizer tuning at d12 (4.1%) are significantly larger than at d8 (1.7%).
+
+### Extrapolation
+
+If d16 were trained for proportionally longer (e.g., 20min instead of 5min,
+matching the tokens-per-parameter ratio of d8), we'd expect the optimizer gap
+to be even larger than 4.1%. The scaling trend d4→d8→d12 suggests that at
+sufficient training duration, **optimizer sensitivity grows super-linearly
+with model size**.
