@@ -81,8 +81,8 @@ BEFORE_OPT_STEP = "    optimizer.step()"
 # ============================================================
 A3_SNR = '''
 # === A3 state ===
-_a3_grad_mean = {{}}    # EMA of gradient per layer
-_a3_grad_var = {{}}     # EMA of gradient variance per layer
+_a3_grad_mean = {}    # EMA of gradient per layer
+_a3_grad_var = {}     # EMA of gradient variance per layer
 _a3_beta = 0.95
 '''
 
@@ -94,7 +94,7 @@ A3_CODE = '''
         for _bi, _block in enumerate(model._orig_mod.transformer.h):
             for _pn, _p in _block.named_parameters():
                 if _p.grad is not None and _p.dim() == 2:
-                    _k = f"{{_bi}}_{{_pn}}"
+                    _k = f"{_bi}_{_pn}"
                     _g = _p.grad.float()
                     if _k not in _a3_grad_mean:
                         _a3_grad_mean[_k] = _g.clone()
@@ -118,7 +118,7 @@ A3_CODE = '''
 # ============================================================
 A4_STATE = '''
 # === A4 state ===
-_a4_grad_history = {{}}  # sliding window of recent gradients per param group
+_a4_grad_history = {}  # sliding window of recent gradients per param group
 _a4_window = 10
 '''
 
@@ -156,7 +156,7 @@ A4_CODE = '''
 # ============================================================
 A6_STATE = '''
 # === A6 state ===
-_a6_prev_update = {{}}
+_a6_prev_update = {}
 '''
 
 A6_CODE = '''
@@ -185,8 +185,8 @@ A6_CODE = '''
 # ============================================================
 A8_STATE = '''
 # === A8 state ===
-_a8_prev_grad = {{}}
-_a8_layer_lr_scale = {{}}
+_a8_prev_grad = {}
+_a8_layer_lr_scale = {}
 '''
 
 A8_CODE = '''
@@ -216,7 +216,7 @@ A8_CODE = '''
 # ============================================================
 A5_STATE = '''
 # === A5 state ===
-_a5_grad_sq_ema = {{}}
+_a5_grad_sq_ema = {}
 _a5_beta = 0.95
 '''
 
@@ -228,7 +228,7 @@ A5_CODE = '''
         for _bi, _block in enumerate(model._orig_mod.transformer.h):
             for _pn, _p in _block.named_parameters():
                 if _p.grad is not None and _p.dim() == 2:
-                    _k = f"{{_bi}}_{{_pn}}"
+                    _k = f"{_bi}_{_pn}"
                     _g = _p.grad.float()
                     _g_sq = _g.square()
                     if _k not in _a5_grad_sq_ema:

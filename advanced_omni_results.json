@@ -1,0 +1,98 @@
+[
+  [
+    "adv38: ref",
+    {
+      "val_loss": 3.4739,
+      "text_bpb": 1.07251,
+      "audio_loss": 5.489993
+    }
+  ],
+  [
+    "adv38: a3_snr",
+    {
+      "val_loss": 3.481799,
+      "text_bpb": 1.0737,
+      "audio_loss": 5.517336
+    }
+  ],
+  [
+    "adv38: a4_proj_1.5",
+    {
+      "val_loss": 3.49099,
+      "text_bpb": 1.074386,
+      "audio_loss": 5.558162
+    }
+  ],
+  [
+    "adv38: a4_proj_2.0",
+    {
+      "val_loss": 3.540597,
+      "text_bpb": 1.090432,
+      "audio_loss": 5.627511
+    }
+  ],
+  [
+    "adv38: a4_proj_3.0",
+    {
+      "val_loss": 4.343769,
+      "text_bpb": 1.378422,
+      "audio_loss": 6.409183
+    }
+  ],
+  [
+    "adv38: a5_curv",
+    {
+      "val_loss": 3.491307,
+      "text_bpb": 1.075783,
+      "audio_loss": 5.542671
+    }
+  ],
+  [
+    "adv38: a6_ortho_1.5",
+    {
+      "val_loss": 3.481779,
+      "text_bpb": 1.073135,
+      "audio_loss": 5.524583
+    }
+  ],
+  [
+    "adv38: a6_ortho_2.0",
+    {
+      "val_loss": 3.479928,
+      "text_bpb": 1.072707,
+      "audio_loss": 5.51949
+    }
+  ],
+  [
+    "adv38: a8_damp_0.3",
+    {
+      "val_loss": 3.488435,
+      "text_bpb": 1.075501,
+      "audio_loss": 5.530563
+    }
+  ],
+  [
+    "adv38: a8_damp_0.5",
+    {
+      "val_loss": 3.48595,
+      "text_bpb": 1.076958,
+      "audio_loss": 5.4997
+    }
+  ],
+  [
+    "adv38: a4_2.0+a8_0.5",
+    {
+      "val_loss": 3.606346,
+      "text_bpb": 1.110643,
+      "audio_loss": 5.732387
+    }
+  ],
+  [
+    "adv38: a3+a6_1.5",
+    {
+      "val_loss": 3.502741,
+      "text_bpb": 1.080467,
+      "audio_loss": 5.546891
+    }
+  ]
+]
