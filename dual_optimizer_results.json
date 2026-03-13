@@ -1,0 +1,110 @@
+[
+  [
+    "dual37: ref",
+    {
+      "val_loss": 3.474995,
+      "text_bpb": 1.071807,
+      "audio_loss": 5.504118
+    }
+  ],
+  [
+    "dual37: alt_5",
+    {
+      "val_loss": 3.48658,
+      "text_bpb": 1.080024,
+      "audio_loss": 5.4659
+    }
+  ],
+  [
+    "dual37: alt_3",
+    {
+      "val_loss": 3.505325,
+      "text_bpb": 1.099248,
+      "audio_loss": 5.33202
+    }
+  ],
+  [
+    "dual37: alt5+dualmom",
+    {
+      "val_loss": 3.55146,
+      "text_bpb": 1.087926,
+      "audio_loss": 5.715964
+    }
+  ],
+  [
+    "dual37: alt3+dualmom",
+    {
+      "val_loss": 3.731803,
+      "text_bpb": 1.149802,
+      "audio_loss": 5.925179
+    }
+  ],
+  [
+    "dual37: alt5+audiomom0.98",
+    {
+      "val_loss": 3.4875,
+      "text_bpb": 1.072779,
+      "audio_loss": 5.558909
+    }
+  ],
+  [
+    "dual37: alt5+audiolr1.5",
+    {
+      "val_loss": 3.480718,
+      "text_bpb": 1.079446,
+      "audio_loss": 5.441784
+    }
+  ],
+  [
+    "dual37: alt5+mom98+lr1.5",
+    null
+  ],
+  [
+    "dual37: dualmom+mom98+lr1.5",
+    {
+      "val_loss": 3.618472,
+      "text_bpb": 1.115481,
+      "audio_loss": 5.738009
+    }
+  ],
+  [
+    "dual37: alt2+dualmom",
+    {
+      "val_loss": 3.706407,
+      "text_bpb": 1.175734,
+      "audio_loss": 5.474527
+    }
+  ],
+  [
+    "dual37: alt5+audiomom0.99",
+    {
+      "val_loss": 3.512664,
+      "text_bpb": 1.077085,
+      "audio_loss": 5.640635
+    }
+  ],
+  [
+    "dual37: mixed_ratio0.3",
+    {
+      "val_loss": 3.628726,
+      "text_bpb": 1.079871,
+      "audio_loss": 5.428667
+    }
+  ],
+  [
+    "dual37: mixed_ratio0.5",
+    {
+      "val_loss": 4.208359,
+      "text_bpb": 1.12152,
+      "audio_loss": 5.272272
+    }
+  ],
+  [
+    "dual37: alt2+dualmom+mom98+lr1.5",
+    {
+      "val_loss": 3.79398,
+      "text_bpb": 1.227741,
+      "audio_loss": 5.309021
+    }
+  ]
+]
