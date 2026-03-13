@@ -1,0 +1,90 @@
+[
+  [
+    "orth40: ref",
+    {
+      "val_loss": 3.474255,
+      "text_bpb": 1.070403,
+      "audio_loss": 5.517394
+    }
+  ],
+  [
+    "orth40: proj0.5",
+    {
+      "val_loss": 3.479336,
+      "text_bpb": 1.079243,
+      "audio_loss": 5.436703
+    }
+  ],
+  [
+    "orth40: proj1.0",
+    {
+      "val_loss": 3.484832,
+      "text_bpb": 1.080221,
+      "audio_loss": 5.454309
+    }
+  ],
+  [
+    "orth40: proj0.75",
+    {
+      "val_loss": 3.481858,
+      "text_bpb": 1.079159,
+      "audio_loss": 5.451207
+    }
+  ],
+  [
+    "orth40: proj0.5+lr1.5",
+    {
+      "val_loss": 3.483815,
+      "text_bpb": 1.078708,
+      "audio_loss": 5.467058
+    }
+  ],
+  [
+    "orth40: proj1.0+lr1.5",
+    {
+      "val_loss": 3.487114,
+      "text_bpb": 1.08094,
+      "audio_loss": 5.457827
+    }
+  ],
+  [
+    "orth40: freeze_bot2",
+    {
+      "val_loss": 3.491144,
+      "text_bpb": 1.08056,
+      "audio_loss": 5.483564
+    }
+  ],
+  [
+    "orth40: freeze_bot4",
+    {
+      "val_loss": 3.504653,
+      "text_bpb": 1.08718,
+      "audio_loss": 5.475452
+    }
+  ],
+  [
+    "orth40: freeze_top2",
+    {
+      "val_loss": 3.491181,
+      "text_bpb": 1.082462,
+      "audio_loss": 5.460654
+    }
+  ],
+  [
+    "orth40: sens1.5",
+    {
+      "val_loss": 3.503027,
+      "text_bpb": 1.086224,
+      "audio_loss": 5.478139
+    }
+  ],
+  [
+    "orth40: proj0.5+freeze_bot2+lr1.5",
+    {
+      "val_loss": 3.497783,
+      "text_bpb": 1.08586,
+      "audio_loss": 5.454696
+    }
+  ]
+]
