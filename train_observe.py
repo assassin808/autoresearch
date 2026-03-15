@@ -42,17 +42,17 @@ DTYPE = torch.bfloat16
 S2_CONFIG = {
     "lr_max": 4e-4,
     "lr_min": 4e-6,
-    "batch_size": 4,          # per-GPU (they used 192 on 8xA100)
-    "grad_accum": 8,          # effective batch = 32
-    "max_steps": 5000,        # ~10min on RTX 5090
+    "batch_size": 2,          # per-GPU (reduced for 32GB VRAM, they used 192 on 8xA100)
+    "grad_accum": 16,         # effective batch = 32
+    "max_steps": 3000,        # ~70min on RTX 5090
     "warmup_steps": 200,
     "weight_decay": 0.01,     # standard AdamW
     "adam_betas": (0.9, 0.95),
     "adam_eps": 1e-8,
     "max_grad_norm": 1.0,
-    "diag_every": 50,         # measure D1-D3,D5-D7 every N steps
-    "basin_every": 500,       # measure D4 (expensive) every N steps
-    "val_every": 100,
+    "diag_every": 100,        # measure D1-D3,D5-D7 every N steps
+    "basin_every": 1000,      # measure D4 (expensive) every N steps
+    "val_every": 200,
 }
 
 # Qwen2-0.5B config for mini-omni
@@ -246,28 +246,59 @@ class DiagnosticTracker:
                         for name, p in model.named_parameters() if p.requires_grad}
         self.history = []
 
-    def compute_gradient_diagnostics(self, model, text_loss, audio_losses, step):
-        """Compute D1, D2, D7 from current gradients."""
-        # We need separate text and audio gradients
-        # This requires two backward passes
-        model.zero_grad()
-        text_loss.backward(retain_graph=True)
-        text_grads = {name: p.grad.clone() for name, p in model.named_parameters()
-                      if p.requires_grad and p.grad is not None}
-        text_grad_norm = sum(g.norm().item()**2 for g in text_grads.values())**0.5
+    def compute_gradient_diagnostics(self, model, val_loader, step):
+        """Compute D1, D2 from separate text/audio backward passes.
 
+        Memory-efficient: uses batch_size=1, short sequences, no retain_graph.
+        Runs two separate forward-backward passes (text-only, audio-only).
+        """
+        model.eval()  # ensure no dropout etc
+
+        # Find a val batch that has both text and audio loss mask active
+        # (e.g., T1T2 + T1A2 pair in same batch)
+        diag_streams = diag_lt = diag_la = None
+        for s, lt, la, tasks_d in val_loader:
+            if lt.any() and la.any():
+                # Truncate seq length but keep all samples
+                max_t = min(s.shape[2], 512)
+                diag_streams = s[:, :, :max_t].to(DEVICE)
+                diag_lt = lt[:, :max_t].to(DEVICE)
+                diag_la = la[:, :max_t].to(DEVICE)
+                break
+        if diag_streams is None:
+            return {"rho": 0, "cos_phi": 0, "layer_cos": {}, "text_grad_norm": 0, "audio_grad_norm": 0, "cb_losses": {}}
+
+        # Pass 1: text loss backward
         model.zero_grad()
-        audio_loss_total = sum(audio_losses) / len(audio_losses)
-        audio_loss_total.backward(retain_graph=True)
-        audio_grads = {name: p.grad.clone() for name, p in model.named_parameters()
-                       if p.requires_grad and p.grad is not None}
-        audio_grad_norm = sum(g.norm().item()**2 for g in audio_grads.values())**0.5
+        text_loss, audio_losses = compute_losses(model, diag_streams, diag_lt, diag_la)
+        if text_loss.item() > 0:
+            text_loss.backward()
+        text_grads = {}
+        text_grad_norm_sq = 0.0
+        for name, p in model.named_parameters():
+            if p.requires_grad and p.grad is not None:
+                text_grads[name] = p.grad.clone()
+                text_grad_norm_sq += p.grad.norm().item()**2
+        text_grad_norm = text_grad_norm_sq**0.5
+
+        # Pass 2: audio loss backward (same batch, different loss)
+        model.zero_grad()
+        _, audio_losses2 = compute_losses(model, diag_streams, diag_lt, diag_la)
+        audio_loss_total = sum(audio_losses2) / max(len(audio_losses2), 1)
+        if audio_loss_total.item() > 0:
+            audio_loss_total.backward()
+        audio_grads = {}
+        audio_grad_norm_sq = 0.0
+        for name, p in model.named_parameters():
+            if p.requires_grad and p.grad is not None:
+                audio_grads[name] = p.grad.clone()
+                audio_grad_norm_sq += p.grad.norm().item()**2
+        audio_grad_norm = audio_grad_norm_sq**0.5
 
         # D1: gradient norm ratio
         rho = audio_grad_norm / (text_grad_norm + 1e-10)
 
-        # D2: gradient interference (global)
-        cos_phi = 0.0
+        # D2: global gradient interference
         dot_prod = 0.0
         for name in text_grads:
             if name in audio_grads:
@@ -289,14 +320,13 @@ class DiagnosticTracker:
             if t_norm2 > 0 and a_norm2 > 0:
                 layer_cos[layer_idx] = dot / (t_norm2**0.5 * a_norm2**0.5 + 1e-10)
 
-        # D7: per-codebook gradient norms
-        cb_grad_norms = {}
-        for i, al in enumerate(audio_losses):
-            model.zero_grad()
-            al.backward(retain_graph=True)
-            cb_norm = sum(p.grad.norm().item()**2 for p in model.parameters()
-                         if p.requires_grad and p.grad is not None)**0.5
-            cb_grad_norms[f"cb{i}"] = cb_norm
+        # D7: per-codebook losses
+        cb_losses = {f"cb{i}": al.item() for i, al in enumerate(audio_losses2)}
+
+        # Clean up
+        del text_grads, audio_grads, diag_streams, diag_lt, diag_la
+        model.zero_grad()
+        torch.cuda.empty_cache()
 
         return {
             "rho": rho,
@@ -304,7 +334,7 @@ class DiagnosticTracker:
             "layer_cos": layer_cos,
             "text_grad_norm": text_grad_norm,
             "audio_grad_norm": audio_grad_norm,
-            "cb_grad_norms": cb_grad_norms,
+            "cb_losses": cb_losses,
         }
 
     def compute_displacement(self, model):
@@ -425,13 +455,16 @@ def forward_text_loss(model, streams, loss_mask_text):
     # Split streams into 8 input tensors
     input_ids = [streams[:, i, :] for i in range(8)]
 
-    with torch.cuda.amp.autocast(dtype=DTYPE):
+    with torch.amp.autocast('cuda', dtype=DTYPE):
         xa, xt = model(audio_features=None, input_ids=input_ids)
 
     # Text loss on masked positions
     targets = input_ids[7][:, 1:]  # shifted text targets
     logits = xt[:, :-1]
     mask = loss_mask_text[:, 1:]
+
+    if not mask.any():
+        return torch.tensor(0.0, device=DEVICE)
 
     loss = F.cross_entropy(
         logits[mask].view(-1, logits.shape[-1]),
@@ -448,7 +481,7 @@ def compute_losses(model, streams, loss_mask_text, loss_mask_audio):
     """Compute text and per-codebook audio losses."""
     input_ids = [streams[:, i, :] for i in range(8)]
 
-    with torch.cuda.amp.autocast(dtype=DTYPE):
+    with torch.amp.autocast('cuda', dtype=DTYPE):
         xa, xt = model(audio_features=None, input_ids=input_ids)
 
     # Text loss
@@ -512,6 +545,19 @@ def train(config=None, output_dir="results/obs_1"):
         if "whisper_adapter" in name:
             p.requires_grad = False
 
+    # Gradient checkpointing to save VRAM
+    model.gradient_checkpointing = True
+    for block in model.transformer.h:
+        block._orig_forward = block.forward
+        def _ckpt_forward(self_block, *args, **kwargs):
+            return torch.utils.checkpoint.checkpoint(
+                self_block._orig_forward, *args, use_reentrant=False, **kwargs)
+        import types
+        block.forward = types.MethodType(
+            lambda self, *a, **kw: torch.utils.checkpoint.checkpoint(
+                self._orig_forward, *a, use_reentrant=False, **kw),
+            block)
+
     model = model.to(DEVICE)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Trainable params: {n_params:,}")
@@ -571,7 +617,8 @@ def train(config=None, output_dir="results/obs_1"):
         # Forward
         text_loss, audio_losses = compute_losses(model, streams, lm_text, lm_audio)
         audio_loss = sum(audio_losses) / max(len(audio_losses), 1)
-        total_loss = text_loss + audio_loss
+        audio_weight = config.get("audio_weight", 1.0)
+        total_loss = text_loss + audio_weight * audio_loss
 
         # Backward with gradient accumulation
         scaled_loss = total_loss / config["grad_accum"]
@@ -626,19 +673,10 @@ def train(config=None, output_dir="results/obs_1"):
                 # D6: embedding rank
                 diag["embedding_rank"] = tracker.compute_embedding_rank(model)
 
-                # D1, D2, D7: gradient-based (need fresh forward-backward)
-                model.eval()
+                # D1, D2, D7: gradient-based (memory-efficient)
                 try:
-                    streams_d, lm_text_d, lm_audio_d, _ = next(iter(val_loader))
-                    streams_d = streams_d.to(DEVICE)
-                    lm_text_d = lm_text_d.to(DEVICE)
-                    lm_audio_d = lm_audio_d.to(DEVICE)
-
-                    text_loss_d, audio_losses_d = compute_losses(
-                        model, streams_d, lm_text_d, lm_audio_d)
-
                     grad_diag = tracker.compute_gradient_diagnostics(
-                        model, text_loss_d, audio_losses_d, step)
+                        model, val_loader, step)
                     diag.update(grad_diag)
                 except Exception as e:
                     print(f"  [diag] Gradient diagnostics failed: {e}")
@@ -701,5 +739,6 @@ if __name__ == "__main__":
 
     config = dict(S2_CONFIG)
     config["max_steps"] = args.max_steps
+    config["audio_weight"] = args.audio_weight
 
     train(config=config, output_dir=args.output_dir)
