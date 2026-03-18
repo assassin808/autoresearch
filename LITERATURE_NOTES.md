@@ -242,3 +242,42 @@ Three independent groups converge on the same solution to text-audio interferenc
 **Mini-omni's approach (shared backbone for everything) is the outlier.** Every other successful omni-model separates text reasoning from speech generation in some way. Our gradient interference findings (cos φ = -0.29) explain why: when text and audio share all parameters, their gradients conflict.
 
 This doesn't mean optimizer tricks are useless — but they're fighting architecture, not just optimization.
+
+---
+
+## Scan: 2026-03-18 11:20 (run #3)
+
+### Gradient Methods Deep Dive
+
+- **CAGrad: Conflict-Averse Gradient Descent** (NeurIPS 2021) Liu et al. | https://arxiv.org/abs/2110.14048
+  Maximizes worst-case local improvement across tasks within a neighborhood of the average gradient. Includes GD and MGDA as special cases. **Provably converges to average loss minimum** (not just any Pareto point). Open-source: https://github.com/Cranial-XIX/CAGrad
+  **Relevance**: HIGH — Direct replacement for our naive gradient projection. CAGrad finds the update that maximally improves the worst task (audio in our case) while staying near the average gradient. Our grad_proj just removes the opposing component; CAGrad optimizes the direction more carefully. Easy to implement (drop-in optimizer wrapper).
+
+- **Aligned-MTL: Independent Component Alignment** (CVPR 2023) Senushkin et al. | https://arxiv.org/abs/2305.19000
+  Aligns principal components of the gradient matrix across tasks. Uses condition number as stability criterion. **Provably converges to optimum with pre-defined task weights.** Resolves both gradient conflicts AND gradient dominance.
+  **Relevance**: MEDIUM — More principled than our projection but requires SVD of gradient matrix per step. May be too expensive for 532M params. Could apply per-layer (our cos φ data shows layers 0,23 are most conflicted).
+
+- **MMPareto: Boosting Multimodal Learning with Innocent Unimodal Assistance** (2024) Wei & Hu | https://arxiv.org/abs/2405.17730
+  Key finding: **standard Pareto methods FAIL in multimodal contexts** because multimodal loss has smaller gradient magnitude than unimodal. Pareto integration misleads unimodal encoder optimization. Fix: align gradient directions across objectives while amplifying magnitudes.
+  **Relevance**: HIGH — Directly explains our ρ≈0.22 observation. Audio (multimodal) gradients are 4× weaker than text (dominant modality). Standard gradient balancing (like our λ=3) can't fix this because the issue is direction, not magnitude. MMPareto's insight: need to align directions AND amplify the weak modality.
+
+- **SAMO: Sharpness-Aware Multi-Task Optimization** (2025-07) Ban et al. | https://arxiv.org/abs/2507.07883
+  Combines SAM with multi-task gradient balancing. "Joint global-local perturbation": weighted average of task-specific and shared gradients as SAM perturbation direction. Finds flat regions where "changes in one objective don't significantly affect the other." Lightweight — approximates task gradients with forward passes only.
+  **Relevance**: HIGH — This is exactly our Approach D (operator-norm SAM) from the meeting prep, but done more carefully. SAMO seeks flat regions where text and audio don't conflict — directly addresses the basin-shaping idea. The forward-pass-only gradient approximation makes it practical for 532M params. Should be our next experiment.
+
+---
+
+## Method Comparison for Our Setting
+
+| Method | What it does | Cost | Addresses our problem? |
+|--------|-------------|------|----------------------|
+| Our grad_proj | Remove opposing audio component | 2× fwd+bwd | Partially — audio still plateaus |
+| CAGrad | Max worst-task improvement near avg gradient | 1.5× fwd+bwd | Better — optimizes direction |
+| Aligned-MTL | SVD alignment of gradient matrix | Expensive (SVD) | Yes but impractical at scale |
+| MMPareto | Pareto + magnitude amplification | ~1.5× | Yes — addresses ρ≈0.22 issue |
+| SAMO | SAM + multi-task perturbation | ~2× fwd | Yes — finds flat multi-task regions |
+| Nash-MTL | Game-theoretic bargaining | ~2× | Yes — automatic balancing |
+
+**Recommended priority**: SAMO > CAGrad > MMPareto > Nash-MTL
+
+But recall: all optimizer methods face the codec bottleneck (DRI + semantic poverty). Even the best gradient method can't overcome bad training targets.
