@@ -375,3 +375,37 @@ The field has bifurcated:
 - **Optimizer camp**: gradient methods (M-SAM, SAMO, CAGrad) — less explored for omni-models
 
 Our work sits uniquely in the optimizer camp with **empirical evidence** (ρ, cos φ, plateau curves) showing WHY the optimizer alone is insufficient. This is the novel contribution: not "a better optimizer" but "a characterization of why optimizers hit a wall."
+
+---
+
+## Scan: 2026-03-18 14:20 (run #6)
+
+### LLaMA-Omni Training Details
+
+- **LLaMA-Omni: Seamless Speech Interaction with Large Language Models** (ICLR 2025) | https://arxiv.org/abs/2409.06666
+  Two-stage: (1) train speech adapter + LLM (encoder frozen, no decoder), LR=2e-5. (2) train speech decoder only, LR=2e-4. Uses **CTC loss** for non-autoregressive speech token alignment — no need to pre-align speech and text. Built on Llama-3.1-8B-Instruct.
+  **Relevance**: MEDIUM — CTC loss for speech output is a fundamentally different approach from mini-omni's CE on SNAC tokens. CTC handles variable-length alignment naturally, avoiding the DRI problem entirely (CTC marginalizes over all valid alignments). Worth noting as an alternative to discrete token prediction.
+
+### Mimi Codec Deeper Details
+
+- **Moshi/Mimi** (confirmed details from scan #0) | https://arxiv.org/abs/2410.00037
+  Mimi distills WavLM into first codebook via **cosine similarity loss** between VQ vectors and WavLM vectors. This makes codebook 1 semantic. Training: Temporal Transformer (7B, time axis) + Depth Transformer (small, codebook axis). α_semantic=100, α_acoustic=1. 50% text batches. 50% padding weight.
+  **Relevance**: Already noted. Confirms Mimi's approach = SpeechTokenizer + DRI mitigation in one codec.
+
+### Llama-Mimi: Flat Sequence Modeling
+
+- **Llama-Mimi: Exploring the Limits of Flattened Speech Language Modeling** (2025-09) Sugiura et al. | https://arxiv.org/abs/2509.14882
+  Flattens all Mimi RVQ tokens into a single sequence, models autoregressively with one Transformer (no Depth Transformer). Outperforms hierarchical CSM-based models on acoustic consistency. Shows that **a simple flat approach can beat complex hierarchical architectures** when the codec tokens are good (Mimi has semantic first codebook).
+  **Relevance**: MEDIUM — Implies that with a good codec (semantic + consistent), even the simplest LM approach works well. Mini-omni's elaborate 8-stream averaging may be unnecessary if the codec is right. Reinforces: fix the codec, simplify the architecture.
+
+---
+
+## No new ideas to add — the picture is complete.
+
+After 7 scans (scans #0-#6), the literature review has converged. Three clear directions:
+
+1. **Fix the codec** (highest impact, most work)
+2. **Separate speech from LLM** (architecture change)
+3. **Better gradient methods** (M-SAM, SAMO — diminishing returns vs codec fix)
+
+Our unique contribution remains: **empirical characterization of the optimization wall** in shared-backbone omni-models, with D1-D7 diagnostics showing exactly where and why gradient methods fail.
