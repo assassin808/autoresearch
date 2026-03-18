@@ -161,3 +161,42 @@ Hourly scans for papers relevant to omni-model training dynamics.
 3. This would dramatically change ρ(t) — audio gradient would be dominated by semantic prediction
 
 **Experiment to add**: S3 training with Moshi-style hierarchical weighting: CB1=100, CB2=10, CB3=1.
+
+---
+
+## Scan: 2026-03-18 09:20 (run #1)
+
+### X-Codec: Semantic-Enriched Audio Tokens (HIGH PRIORITY)
+
+- **X-Codec: Codec Does Matter: Exploring the Semantic Shortcoming of Codec for Audio Language Model** (AAAI 2025) Ye et al. | https://arxiv.org/abs/2408.17175
+  Pure acoustic codecs (EnCodec, SNAC) force LMs to "predict local fluctuations of the audio signal, which is difficult." X-Codec injects HuBERT semantic features before RVQ via linear projection, plus semantic reconstruction loss after RVQ. Result: ABX phonetic error 3.3% vs EnCodec's 17.5%. WER: 4.07% vs EnCodec 6.37%. The tokens carry semantic meaning, not just acoustic detail.
+  **Relevance**: HIGH — Directly addresses why our audio loss plateaus. SNAC tokens lack semantic content → LM struggles to predict them. X-Codec-style semantic injection would make tokens more predictable. Combined with DRI mitigation (scan #9), this is the codec-level fix our optimizer experiments can't achieve.
+
+### MinMo: 4-Stage Voice Interaction Training
+
+- **MinMo: A Multimodal LLM for Seamless Voice Interaction** (2025-01) Alibaba FunAudioLLM | https://arxiv.org/abs/2501.06282
+  8B model, 1.4M hours speech data. Four stages: (1) speech-to-text 1.2M hrs, (2) text-to-speech 170K hrs, (3) speech-to-speech 10K hrs, (4) duplex 4K hrs. Key: **LLM frozen initially, updated only via LoRA** later. Uses CosyVoice 2 discrete tokens (not SNAC/EnCodec). 100ms S2T latency.
+  **Relevance**: MEDIUM — Another data point for "freeze LLM, train adapters" approach (like VITA-1.5). LoRA for LLM update is a middle ground between full freeze and full unfreeze. 1.4M hours vs our 88K samples highlights the data scale gap.
+
+### Attention/Residual Sinks
+
+- **A Unified View of Attention and Residual Sinks: Outlier-Driven Rescaling** (2026-01) Qiu et al. | https://arxiv.org/abs/2601.22966
+  Attention sinks and residual sinks are the same phenomenon: outliers serve as rescale factors for normalization (softmax, RMSNorm), not as information carriers.
+  **Relevance**: LOW — Theoretical insight about transformer internals. Related to Kimi AttnRes (both address residual accumulation issues) but no direct training optimization implications for us.
+
+---
+
+## Running Tally: Codec is the Bottleneck
+
+Three scans now point to the same conclusion:
+1. **DRI** (scan #9): Same audio → different SNAC tokens. Consistency fix: WER 4.73→1.84.
+2. **X-Codec** (this scan): Acoustic tokens lack semantics. Semantic injection: WER 6.37→4.07.
+3. **Moshi** (scan #0): 100:1 semantic vs acoustic weighting. Semantic tokens matter 100× more.
+
+**Our audio plateau (4.56→3.57, then stuck) is fundamentally a codec/token problem, not an optimizer problem.** The tokens we're predicting are (a) inconsistent and (b) semantically empty. No amount of gradient manipulation can fix bad training targets.
+
+### Actionable next steps (ordered by expected impact):
+1. **Moshi-style CB weighting** (easiest, no architecture change): CB1=100, CB2=10, CB3=1
+2. **DRI-consistent SNAC** (medium effort): retrain SNAC with slice+perturbation consistency
+3. **X-Codec replacement** (high effort): replace SNAC with semantic-enriched codec
+4. **Frozen LLM + LoRA** (medium effort): VITA-1.5/MinMo approach to prevent text degradation
