@@ -200,3 +200,45 @@ Three scans now point to the same conclusion:
 2. **DRI-consistent SNAC** (medium effort): retrain SNAC with slice+perturbation consistency
 3. **X-Codec replacement** (high effort): replace SNAC with semantic-enriched codec
 4. **Frozen LLM + LoRA** (medium effort): VITA-1.5/MinMo approach to prevent text degradation
+
+---
+
+## Scan: 2026-03-18 10:20 (run #2)
+
+### MGM-Omni — 贾佳亚 Group (HIGH PRIORITY)
+
+- **MGM-Omni: Scaling Omni LLMs to Personalized Long-Horizon Speech** (2025-09) Wang, Zhong, Peng, ..., **Jiaya Jia** | https://arxiv.org/abs/2509.25131
+  From Jiaya Jia's group (HKUST/DVLAB). "Brain-mouth" dual-track architecture: MLLM ("brain") handles multimodal reasoning, SpeechLM ("mouth") handles speech token generation. Key design: **decouple reasoning from speech generation** — brain produces text, mouth converts to speech tokens via chunk-based parallel decoding (bridges text-speech token rate gap). Uses CosyVoice2 tokenizer + flow matching vocoder. Built on Qwen2.5-VL + Qwen3 LLMs. Claims "data-efficient" training (~400K hours audio). Training code not yet released.
+  **Relevance**: HIGH — The brain-mouth separation is architecturally similar to VITA-1.5's frozen-LLM approach: the MLLM doesn't need to generate speech tokens directly, so no text-audio gradient conflict in the backbone. The SpeechLM is a separate module trained on text→speech. This completely avoids the problem we're studying (gradient interference in shared backbone). Worth understanding if this is strictly better or if there's a quality trade-off vs end-to-end approaches like mini-omni.
+
+  Code: https://github.com/JIA-Lab-research/MGM-Omni (training code TBD)
+
+### CosyVoice 2: Better Speech Codec
+
+- **CosyVoice 2: Scalable Streaming Speech Synthesis with Large Language Models** (2024-12) Alibaba FunAudioLLM | https://arxiv.org/abs/2412.10117
+  Replaces VQ with Finite Scalar Quantization (FSQ) — achieves **100% codebook utilization** vs VQ's typical 23%. Removes text encoder and speaker embedding, using pretrained LLM as backbone directly. Trained on 200K hours. Streaming + non-streaming unified.
+  **Relevance**: MEDIUM — FSQ achieving 100% codebook utilization is significant. SNAC/EnCodec likely have low utilization too, meaning many codebook entries are dead → effectively smaller vocab → harder prediction task. FSQ may reduce DRI by making quantization more uniform. Used by both MinMo and MGM-Omni.
+
+### MMAudio: Joint Training for Audio Synthesis
+
+- **MMAudio: Taming Multimodal Joint Training for High-Quality Video-to-Audio Synthesis** (CVPR 2025) | https://github.com/hkchengrex/MMAudio
+  Joint training of video-to-audio with multimodal conditioning. "Taming" suggests they had to solve training instability issues.
+  **Relevance**: LOW — Video-to-audio, not speech. But "taming joint training" may have relevant tricks.
+
+---
+
+## Emerging Pattern: Brain-Mouth Separation
+
+Three independent groups converge on the same solution to text-audio interference:
+
+| Model | Approach | Text degradation |
+|-------|----------|-----------------|
+| Mini-omni | Shared backbone, all unfrozen | +4% (our measurement) |
+| VITA-1.5 | Frozen LLM for audio decoder | 0% |
+| MinMo | Frozen LLM → LoRA update | ~0% |
+| MGM-Omni | Separate SpeechLM ("mouth") | ~0% |
+| Qwen3-Omni | Thinker-Talker MoE | ~0% |
+
+**Mini-omni's approach (shared backbone for everything) is the outlier.** Every other successful omni-model separates text reasoning from speech generation in some way. Our gradient interference findings (cos φ = -0.29) explain why: when text and audio share all parameters, their gradients conflict.
+
+This doesn't mean optimizer tricks are useless — but they're fighting architecture, not just optimization.
