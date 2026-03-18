@@ -409,3 +409,25 @@ After 7 scans (scans #0-#6), the literature review has converged. Three clear di
 3. **Better gradient methods** (M-SAM, SAMO — diminishing returns vs codec fix)
 
 Our unique contribution remains: **empirical characterization of the optimization wall** in shared-backbone omni-models, with D1-D7 diagnostics showing exactly where and why gradient methods fail.
+
+---
+
+## Scan: 2026-03-18 15:20 (run #7)
+
+### Codebook Weighting & Alternatives
+
+- **Continuous Audio Language Models** (2025-09) Rouard et al. (Kyutai) | https://arxiv.org/abs/2509.06926
+  Avoids discrete tokens entirely — uses continuous audio VAE + consistency modeling. Generates continuous waveforms via MLP conditioned on Transformer embeddings. "Higher quality at lower computational cost" than discrete models. Released Pocket TTS (100M, real-time on laptop CPU).
+  **Relevance**: MEDIUM — The nuclear option: skip discrete tokens entirely, eliminating DRI by construction. From same lab as Moshi. If discrete codecs are fundamentally limited, continuous approaches may be the future. But requires completely different architecture.
+
+- **Representation Collapse in VQ Models** (ICCV 2025) Zhu et al. | https://openaccess.thecvf.com/content/ICCV2025/papers/Zhu_Addressing_Representation_Collapse_in_Vector_Quantized_Models_with_One_Linear_ICCV_2025_paper.pdf
+  Addresses codebook collapse (dead codes) in VQ with a single linear layer fix. Related to CosyVoice2's FSQ achieving 100% utilization.
+  **Relevance**: LOW — Codec training fix, not LM training.
+
+- **ERVQ: Enhanced RVQ** (2024) — adds intra-codebook balancing (online clustering + code balancing loss) and inter-codebook diversity (SSIM loss). Eliminates codebook collapse.
+  **Relevance**: LOW — Codec-level optimization.
+
+### Summary note
+This scan confirms: the Kyutai team (Moshi authors) is also exploring continuous alternatives to discrete tokens, suggesting even they recognize the fundamental limitations of discrete codecs for LM-based audio generation.
+
+No new actionable items beyond existing priority list.
