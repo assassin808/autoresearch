@@ -73,3 +73,51 @@ Hourly scans for papers relevant to omni-model training dynamics.
 4. **Nash-MTL**: Replace fixed λ with Nash bargaining solution. Available implementation. Would automatically balance text/audio.
 
 5. **Disentangled speech tokenizer** (from EMOVA): Separate semantic and acoustic tokens before feeding to LM. May reduce DRI and improve audio loss convergence.
+
+---
+
+## Scan: 2026-03-18 07:20 (run #9)
+
+### VITA-1.5 Training Strategy (HIGH PRIORITY)
+
+- **VITA-1.5: Towards GPT-4o Level Real-Time Vision and Speech Interaction** (NeurIPS 2025 Spotlight) Fu et al. | https://arxiv.org/abs/2501.01957
+  Three-stage progressive training for omni-modal. Key insight: **LLM is FROZEN during audio decoder training (Stage 3)** — this completely prevents text degradation from audio training. Stage 1: vision alignment (adapter→full VL). Stage 2: audio input (CTC loss for encoder, then joint fine-tune). Stage 3: audio output decoder trained with frozen LLM. Uses TiCodec with single codebook (size 1024) — much simpler than SNAC's 7 codebooks.
+  **Relevance**: HIGH — Their solution to text degradation is radical: don't backprop audio output loss through the LLM at all. This is the opposite of mini-omni's approach (all weights unfrozen in S3). Explains why mini-omni has +4% text degradation while VITA preserves text. Trade-off: audio decoder can't leverage LLM reasoning since LLM is frozen. Also: single codebook avoids the DRI scaling problem across multiple codebooks.
+
+### DRI Mitigation (HIGH PRIORITY)
+
+- **Analyzing and Mitigating Inconsistency in Discrete Audio Tokens for Neural Codec Language Models** (ACL 2025 Oral) Liu, Guo, Xu et al. | https://arxiv.org/abs/2409.19283
+  Quantifies DRI: same audio → different tokens depending on context. Proposes two fixes applied during **codec training** (not LM training):
+  1. **Slice-consistency**: encode random audio segment separately, constrain its latent to match the corresponding portion from full audio. Loss: `ℒ_slice = MSE(Z_slice, Z_full_portion)`.
+  2. **Perturbation-consistency**: add imperceptible phase perturbations, constrain latent to match original. Loss: `ℒ_perception = MSE(Z_perturbed, Z_original)`.
+  Results: consistency +21-36% across codebook layers. Downstream: WER 4.73→1.84 (-61%), speaker similarity 77→84%.
+  **Relevance**: HIGH — DRI is likely the root cause of our audio plateau. SNAC tokens are inconsistent, creating contradictory training signals that cap audio loss. Fix is at the codec level (retrain SNAC with consistency losses), not the LM level. This explains why our optimizer experiments (λ=3, grad_proj) have limited effect — the bottleneck is in the data, not the optimization.
+
+### Progressive Training Curriculum
+
+- **Preparing Lessons for Progressive Training on Language Models** (AAAI 2024) | https://arxiv.org/abs/2401.09192
+  Apollo method: train low layers first, then progressively expand to higher layers. Uses low-value-prioritized sampling (LVPS) and weight sharing for efficient expansion.
+  **Relevance**: LOW — Layer-progressive training is interesting conceptually but our model is already pretrained. More relevant for training from scratch.
+
+### Language-Codec for Audio LMs
+
+- **Language-Codec: Reducing the Gaps Between Discrete Codec Representation and Speech Language Models** (ACL 2025 Oral) | https://github.com/jishengpeng/Languagecodec
+  Addresses the semantic gap between codec tokens and LM needs. Adaptive dropout depths to differentially train codebooks across layers.
+  **Relevance**: MEDIUM — The "adaptive dropout depths" for codebook training is interesting. Different codebook layers get different dropout → forces each layer to be independently useful. May help with our CB hierarchy convergence.
+
+---
+
+## Updated Ideas to Try (cumulative)
+
+### From scan #8:
+1. ConicGrad for text-audio gradient cone constraint
+2. Sparse training: freeze high-conflict layers (0, 23)
+3. AttnRes for depth-wise modality routing
+4. Nash-MTL for automatic text/audio balancing
+5. Disentangled speech tokenizer (EMOVA)
+
+### From scan #9:
+6. **Frozen LLM for audio decoder** (VITA-1.5 approach): train audio output path with LLM frozen. Zero text degradation but limits audio quality.
+7. **DRI-aware codec retraining**: retrain SNAC with slice-consistency + perturbation-consistency losses. Addresses root cause of audio plateau.
+8. **Single codebook** (TiCodec): simplify from 7 SNAC codebooks to 1. Reduces DRI surface area and simplifies loss computation. Trade-off: lower audio quality.
+9. **Adaptive codebook dropout**: different dropout per codebook layer during codec training (Language-Codec approach).
