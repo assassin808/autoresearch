@@ -431,3 +431,15 @@ Our unique contribution remains: **empirical characterization of the optimizatio
 This scan confirms: the Kyutai team (Moshi authors) is also exploring continuous alternatives to discrete tokens, suggesting even they recognize the fundamental limitations of discrete codecs for LM-based audio generation.
 
 No new actionable items beyond existing priority list.
+
+---
+
+## Scan: 2026-03-18 16:20 (run #8, wrap)
+
+### New: Speech-Omni-Lite (March 10, 2026)
+
+- **Speech-Omni-Lite: Portable Speech Interfaces for Vision-Language Models** (2026-03-10) Tao et al. | https://arxiv.org/abs/2603.09627
+  Adds speech to VL models with **VL backbone fully frozen**. Only trains two lightweight plug-and-play modules: speech projector + speech token generator. "Fully preserving VL performance." Uses low-cost data construction from ASR pairs (thousands of hours, not millions). Just 8 days old.
+  **Relevance**: MEDIUM — Yet another frozen-backbone approach. Confirms the pattern: 6/6 successful models freeze the LLM when adding speech. Mini-omni's all-unfrozen S3 is the exception. Lightweight modules (projector + generator) are analogous to mini-omni's whisper_adapter but they don't backprop through the LLM.
+
+No other new findings — queries wrapped to same topics as earlier scans.
