@@ -324,3 +324,54 @@ But recall: all optimizer methods face the codec bottleneck (DRI + semantic pove
 **SNAC is the worst choice for LM-based audio prediction.** Every modern codec designed for LMs addresses semantic content and/or consistency. SNAC addresses neither.
 
 This is the strongest evidence yet that our audio plateau is a codec limitation, not an optimization problem.
+
+---
+
+## Scan: 2026-03-18 13:20 (run #5)
+
+### Modality-Aware SAM (HIGH PRIORITY)
+
+- **Modality-Aware SAM (M-SAM): Sharpness-Aware-Minimization Driven Gradient Modulation for Harmonized Multimodal Learning** (NeurIPS 2025) Nowdeh et al. | https://arxiv.org/abs/2510.24919
+  Uses Shapley values to identify dominant modality per iteration, then modulates loss landscape to prioritize robustness of the dominant modality while enabling weaker modalities to contribute. Three steps: (1) identify dominant modality via Shapley, (2) decompose loss landscape favoring dominant, (3) apply modulated gradients. Model-agnostic, supports early/late fusion.
+  **Relevance**: CRITICAL — This is exactly what we need. In our setting, text is the dominant modality (ρ≈0.22, text gradients 4× larger). M-SAM would identify text as dominant, then modulate the loss landscape to let audio contribute without being overshadowed. Combines SAM's flat-minima seeking with modality-aware gradient balancing. Much more principled than our naive grad_proj. **Should be our top priority experiment.**
+
+### Multi-Task Learning via Generalization (Flat Minima)
+
+- **Beyond Losses Reweighting: Empowering Multi-Task Learning via the Generalization Perspective** (ICCV 2025) Phan et al. | https://openaccess.thecvf.com/content/ICCV2025/papers/Phan_Beyond_Losses_Reweighting_Empowering_Multi-Task_Learning_via_the_Generalization_Perspective_ICCV_2025_paper.pdf
+  Key insight: **loss reweighting is insufficient — need to address loss landscape geometry.** Combines flat gradient component (weight perturbations to penalize sharpness per task) with loss gradient component. Theorem: controlling gradient norm bounds generalization. Task-specific params get standard updates, shared params get SAM-style flat-seeking updates.
+  **Relevance**: HIGH — Directly validates our finding that λ=3 (loss reweighting) doesn't help. The paper proves theoretically that loss-level adjustments can't fix geometry-level problems. The fix must operate on the landscape itself (SAM-style perturbations), not just the loss weights.
+
+### Basin-Like Loss Landscape (Our Starting Paper)
+
+- **Unveiling the Basin-Like Loss Landscape in Large Language Models** (2025-05) Chen et al. | https://arxiv.org/abs/2505.17646
+  Original GO paper. Key claims: (1) pre-training creates basic capability basin, (2) fine-tuning creates nested specific basins, (3) GO (Gaussian perturbation during training) widens basins, (4) basin size bounds worst-case fine-tuning degradation. GO is most effective during pre-training.
+  **Relevance**: MEDIUM (revisited) — Our experiments falsified the "audio as implicit GO" hypothesis (basin width unchanged). But the GO insight is still valid: wider basins resist degradation. M-SAM/SAMO are more targeted versions of GO for multi-task settings.
+
+---
+
+## Revised Method Priority (final)
+
+Based on 6 scans of literature:
+
+### Tier 1: Most promising for our setting
+1. **M-SAM** — Modality-aware SAM with Shapley identification. Directly addresses ρ≈0.22 + cos φ<0.
+2. **Moshi-style CB weighting** (100:1) — Zero code complexity. Largest expected impact from a single change.
+3. **SAMO** — SAM + multi-task, finds flat regions where tasks don't conflict.
+
+### Tier 2: Worth trying
+4. **CAGrad** — Max worst-task improvement. Drop-in optimizer wrapper.
+5. **Frozen LLM + LoRA for audio** — VITA-1.5/MinMo approach. Eliminates gradient conflict.
+6. **DRI-consistent SNAC retraining** — Fix codec tokens. Addresses root cause.
+
+### Tier 3: Requires architecture change
+7. **Brain-mouth separation** (MGM-Omni) — Separate SpeechLM.
+8. **X-Codec / SpeechTokenizer replacement** — Semantic-aware codec.
+9. **AttnRes** (Kimi) — Depth-wise attention for modality routing.
+
+### Key insight from literature review
+The field has bifurcated:
+- **Architecture camp**: separate text and speech paths (VITA-1.5, MGM-Omni, Qwen3-Omni)
+- **Codec camp**: make tokens more LM-friendly (X-Codec, DRI fix, SpeechTokenizer)
+- **Optimizer camp**: gradient methods (M-SAM, SAMO, CAGrad) — less explored for omni-models
+
+Our work sits uniquely in the optimizer camp with **empirical evidence** (ρ, cos φ, plateau curves) showing WHY the optimizer alone is insufficient. This is the novel contribution: not "a better optimizer" but "a characterization of why optimizers hit a wall."
