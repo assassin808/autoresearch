@@ -499,25 +499,93 @@ def train(config=None, output_dir="results/s3_adam"):
         lm_text = lm_text.to(DEVICE)
         lm_audio = lm_audio.to(DEVICE)
 
-        # Forward
-        text_loss, audio_losses = compute_losses(model, streams, lm_text, lm_audio)
-        audio_loss = sum(audio_losses) / 7
-        audio_weight = config.get("audio_weight", 1.0)
-        total_loss = text_loss + audio_weight * audio_loss
+        # ---- Method: gradient projection ----
+        method = config.get("method", "baseline")
 
-        # Backward with gradient accumulation
-        scaled_loss = total_loss / config["grad_accum"]
-        scaler.scale(scaled_loss).backward()
+        if method == "grad_proj":
+            # Two separate backward passes to get text and audio gradients,
+            # then project out destructive audio component
+            text_loss, audio_losses = compute_losses(model, streams, lm_text, lm_audio)
+            audio_loss = sum(audio_losses) / 7
+            audio_weight = config.get("audio_weight", 1.0)
 
-        accum_text_loss += text_loss.item()
-        accum_audio_loss += audio_loss.item()
-        for i in range(7):
-            accum_cb_losses[i] += audio_losses[i].item()
-        accum_steps += 1
+            # Pass 1: text backward (no scaler for grad_proj — manual grad manipulation)
+            model.zero_grad()
+            with torch.amp.autocast('cuda', enabled=False):
+                pass  # losses already computed in autocast
+            (text_loss / config["grad_accum"]).backward(retain_graph=True)
+            text_grads = {}
+            for name, p in model.named_parameters():
+                if p.requires_grad and p.grad is not None:
+                    text_grads[name] = p.grad.clone()
+
+            # Pass 2: audio backward
+            model.zero_grad()
+            scaled_audio = (audio_weight * audio_loss) / config["grad_accum"]
+            scaled_audio.backward()
+
+            # Project: remove destructive component of audio grad
+            # g_audio' = g_audio - min(0, cos) * proj(g_audio onto g_text)
+            dot_global = 0.0
+            t_norm2 = 0.0
+            a_norm2 = 0.0
+            for name, p in model.named_parameters():
+                if p.requires_grad and p.grad is not None and name in text_grads:
+                    dot_global += (p.grad * text_grads[name]).sum().item()
+                    t_norm2 += text_grads[name].norm().item()**2
+                    a_norm2 += p.grad.norm().item()**2
+
+            cos_phi_step = dot_global / (max(t_norm2, 1e-10)**0.5 * max(a_norm2, 1e-10)**0.5)
+
+            if cos_phi_step < 0 and t_norm2 > 0:
+                # Remove destructive component
+                proj_scale = dot_global / t_norm2
+                for name, p in model.named_parameters():
+                    if p.requires_grad and p.grad is not None and name in text_grads:
+                        p.grad.sub_(proj_scale * text_grads[name])
+
+            # Combine: text_grad + projected_audio_grad
+            for name, p in model.named_parameters():
+                if p.requires_grad and name in text_grads:
+                    if p.grad is not None:
+                        p.grad.add_(text_grads[name])
+                    else:
+                        p.grad = text_grads[name].clone()
+
+            del text_grads
+
+            accum_text_loss += text_loss.item()
+            accum_audio_loss += audio_loss.item()
+            for i in range(7):
+                accum_cb_losses[i] += audio_losses[i].item()
+            accum_steps += 1
+
+        else:
+            # Standard forward-backward (baseline, adaptive_lambda, lambda_N)
+            text_loss, audio_losses = compute_losses(model, streams, lm_text, lm_audio)
+            audio_loss = sum(audio_losses) / 7
+
+            # Adaptive λ: adjust based on ρ
+            audio_weight = config.get("audio_weight", 1.0)
+            if method == "adaptive_lambda":
+                audio_weight = config.get("_current_lambda", config.get("audio_weight", 1.0))
+
+            total_loss = text_loss + audio_weight * audio_loss
+
+            # Backward with gradient accumulation
+            scaled_loss = total_loss / config["grad_accum"]
+            scaler.scale(scaled_loss).backward()
+
+            accum_text_loss += text_loss.item()
+            accum_audio_loss += audio_loss.item()
+            for i in range(7):
+                accum_cb_losses[i] += audio_losses[i].item()
+            accum_steps += 1
 
         if accum_steps >= config["grad_accum"]:
             # Gradient clipping
-            scaler.unscale_(optimizer)
+            if method != "grad_proj":
+                scaler.unscale_(optimizer)
             grad_norm = torch.nn.utils.clip_grad_norm_(
                 [p for p in model.parameters() if p.requires_grad],
                 config["max_grad_norm"]
@@ -530,8 +598,11 @@ def train(config=None, output_dir="results/s3_adam"):
             for pg in optimizer.param_groups:
                 pg['lr'] = lr
 
-            scaler.step(optimizer)
-            scaler.update()
+            if method == "grad_proj":
+                optimizer.step()
+            else:
+                scaler.step(optimizer)
+                scaler.update()
             optimizer.zero_grad()
 
             step += 1
@@ -580,6 +651,19 @@ def train(config=None, output_dir="results/s3_adam"):
                     print(f"  [diag] Gradient diagnostics failed: {e}")
                 model.train()
                 optimizer.zero_grad()
+
+                # Adaptive λ update based on ρ
+                if method == "adaptive_lambda" and "rho" in diag:
+                    rho_val = diag["rho"]
+                    alpha = config.get("adaptive_alpha", 0.1)
+                    current_lambda = config.get("_current_lambda", config.get("audio_weight", 1.0))
+                    # Push λ up when ρ<1 (audio too weak), down when ρ>1
+                    if abs(rho_val - 1.0) < 1.0:
+                        delta = alpha * (1.0 - rho_val)
+                        current_lambda = max(0.1, min(10.0, current_lambda + delta))
+                        config["_current_lambda"] = current_lambda
+                    diag["adaptive_lambda"] = current_lambda
+                    print(f"    adaptive λ={current_lambda:.3f} (ρ={rho_val:.4f})")
 
                 diagnostics_log.append(diag)
                 with open(f"{output_dir}/diagnostics.json", "w") as f:
@@ -631,7 +715,8 @@ def train(config=None, output_dir="results/s3_adam"):
     print(f"\nTraining complete ({time.time()-t0:.0f}s). Saving...")
     with open(f"{output_dir}/diagnostics.json", "w") as f:
         json.dump(diagnostics_log, f, indent=2, default=str)
-    torch.save(model.state_dict(), f"{output_dir}/model_final.pt")
+    if config.get("save_every", 2500) < 999999:
+        torch.save(model.state_dict(), f"{output_dir}/model_final.pt")
 
     # Final validation
     model.eval()
@@ -664,11 +749,22 @@ if __name__ == "__main__":
     parser.add_argument("--lr_min", type=float, default=None)
     parser.add_argument("--warmup_steps", type=int, default=None)
     parser.add_argument("--weight_decay", type=float, default=None)
+    parser.add_argument("--method", default="baseline",
+                        choices=["baseline", "grad_proj", "adaptive_lambda"],
+                        help="Training method variant")
+    parser.add_argument("--adaptive_alpha", type=float, default=0.1,
+                        help="Adaptive λ step size")
+    parser.add_argument("--no_save_model", action="store_true",
+                        help="Skip saving model checkpoints (save disk)")
     args = parser.parse_args()
 
     config = dict(S3_CONFIG)
     config["max_steps"] = args.max_steps
     config["audio_weight"] = args.audio_weight
+    config["method"] = args.method
+    config["adaptive_alpha"] = args.adaptive_alpha
+    if args.no_save_model:
+        config["save_every"] = 999999  # effectively never
     if args.lr_max is not None:
         config["lr_max"] = args.lr_max
     if args.lr_min is not None:
