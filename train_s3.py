@@ -452,6 +452,14 @@ def train(config=None, output_dir="results/s3_adam"):
         weight_decay=config["weight_decay"],
     )
 
+    # ---- Adjust batch for memory-hungry methods ----
+    method = config.get("method", "baseline")
+    if method == "grad_proj":
+        # 2 forward passes → need smaller batch
+        config["batch_size"] = 1
+        config["grad_accum"] = 32
+        print(f"  [grad_proj] batch_size=1, grad_accum=32 (2x forward passes)")
+
     # ---- Data ----
     data_dir = "/root/.cache/autoresearch/s3_data"
     train_dataset = OmniS3Dataset(f"{data_dir}/train.pt")
@@ -503,24 +511,22 @@ def train(config=None, output_dir="results/s3_adam"):
         method = config.get("method", "baseline")
 
         if method == "grad_proj":
-            # Two separate backward passes to get text and audio gradients,
-            # then project out destructive audio component
-            text_loss, audio_losses = compute_losses(model, streams, lm_text, lm_audio)
-            audio_loss = sum(audio_losses) / 7
+            # Two separate forward+backward passes (no retain_graph, saves memory)
             audio_weight = config.get("audio_weight", 1.0)
 
-            # Pass 1: text backward (no scaler for grad_proj — manual grad manipulation)
+            # Pass 1: text loss forward+backward
             model.zero_grad()
-            with torch.amp.autocast('cuda', enabled=False):
-                pass  # losses already computed in autocast
-            (text_loss / config["grad_accum"]).backward(retain_graph=True)
+            text_loss_1, _ = compute_losses(model, streams, lm_text, lm_audio)
+            (text_loss_1 / config["grad_accum"]).backward()
             text_grads = {}
             for name, p in model.named_parameters():
                 if p.requires_grad and p.grad is not None:
                     text_grads[name] = p.grad.clone()
 
-            # Pass 2: audio backward
+            # Pass 2: audio loss forward+backward
             model.zero_grad()
+            text_loss, audio_losses = compute_losses(model, streams, lm_text, lm_audio)
+            audio_loss = sum(audio_losses) / 7
             scaled_audio = (audio_weight * audio_loss) / config["grad_accum"]
             scaled_audio.backward()
 
