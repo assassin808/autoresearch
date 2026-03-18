@@ -121,3 +121,43 @@ Hourly scans for papers relevant to omni-model training dynamics.
 7. **DRI-aware codec retraining**: retrain SNAC with slice-consistency + perturbation-consistency losses. Addresses root cause of audio plateau.
 8. **Single codebook** (TiCodec): simplify from 7 SNAC codebooks to 1. Reduces DRI surface area and simplifies loss computation. Trade-off: lower audio quality.
 9. **Adaptive codebook dropout**: different dropout per codebook layer during codec training (Language-Codec approach).
+
+---
+
+## Scan: 2026-03-18 08:20 (run #0)
+
+### Moshi Training Details (HIGH PRIORITY — exact numbers)
+
+- **Moshi: a speech-text foundation model for real-time dialogue** (2024-10) Kyutai team | https://arxiv.org/abs/2410.00037
+  Finally extracted exact training numbers:
+  - **Codebook weighting: α_semantic = 100, α_acoustic = 1** (100:1 ratio!). This is in their loss Eq.7. Semantic tokens get 100× more gradient signal than acoustic tokens.
+  - **Text-only batches: 50%** of training is text-only to prevent catastrophic forgetting.
+  - **Padding token weight: reduced 50%** since padding dominates audio batches.
+  - **Delay pattern: τ=1 or τ=2** steps between semantic and acoustic features.
+  - **Inner Monologue**: text tokens prepended as prefix to audio at each frame (12.5Hz alignment from Whisper ASR). Reduces NLL 4.36→2.77. Spoken QA: 9%→26.6%.
+  - **Architecture**: 7B Temporal Transformer (time) + small Depth Transformer (inter-codebook per frame).
+  **Relevance**: CRITICAL — The 100:1 semantic vs acoustic weighting is the opposite of our equal weighting. In mini-omni all 7 SNAC streams get equal loss weight. Moshi concentrates 99% of audio gradient on semantic tokens. This may explain why our codebook hierarchy shows all CBs plateauing together — they should be weighted drastically differently. Also: 50% text batches matches our observation that text needs protection.
+
+### UALM (NVIDIA)
+
+- **UALM: Unified Audio Language Model for Understanding, Generation, and Reasoning** (2025) NVIDIA ADLR | https://research.nvidia.com/labs/adlr/UALM/
+  Unifies audio understanding + generation + reasoning in single 7B model. Key trick: **upweight audio generation data** (not loss weight — data sampling weight) because generation is harder. Uses warmup stage before full fine-tuning. Matches specialized models without text degradation.
+  **Relevance**: MEDIUM — Data upweighting (more audio gen samples per batch) as alternative to loss weighting. Simpler than our gradient methods. Their success "without capability degradation" suggests careful data mixing is more important than optimizer tricks.
+
+### Omni-Model Survey
+
+- **On The Landscape of Spoken Language Models: A Comprehensive Survey** (2025-04) | https://arxiv.org/abs/2504.08528
+  Comprehensive survey of speech LMs covering training strategies, speech/text token decoding patterns, duplex dialogue, benchmarks.
+  **Relevance**: LOW — Reference survey, not new methods.
+
+---
+
+## Key Insight from This Scan
+
+**Moshi's 100:1 codebook weighting is a major finding we missed.** Our S3 training uses equal weight on all 7 SNAC streams. Moshi weights semantic tokens 100× more than acoustic. This means:
+
+1. Semantic codebook (CB1 in SNAC = stream 0) should get ~100× more loss weight
+2. Fine acoustic codebooks (CB3 = streams 2,3,5,6) should get ~1× weight
+3. This would dramatically change ρ(t) — audio gradient would be dominated by semantic prediction
+
+**Experiment to add**: S3 training with Moshi-style hierarchical weighting: CB1=100, CB2=10, CB3=1.
