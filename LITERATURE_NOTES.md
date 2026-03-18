@@ -281,3 +281,46 @@ This doesn't mean optimizer tricks are useless — but they're fighting architec
 **Recommended priority**: SAMO > CAGrad > MMPareto > Nash-MTL
 
 But recall: all optimizer methods face the codec bottleneck (DRI + semantic poverty). Even the best gradient method can't overcome bad training targets.
+
+---
+
+## Scan: 2026-03-18 12:20 (run #4)
+
+### Codec Evolution: The Semantic-Acoustic Split
+
+- **SpeechTokenizer: Unified Speech Tokenizer for Speech LLMs** (ICLR 2024) Zhang et al. | https://arxiv.org/abs/2308.16692
+  First RVQ layer captures semantic content (distilled from HuBERT teacher), remaining layers capture acoustic/timbre. AR model generates semantic (layer 1) tokens, NAR model fills in acoustic (layers 2+). Key insight: **semantic and acoustic should be modeled separately**, not jointly predicted with equal weight.
+  **Relevance**: HIGH — Directly supports Moshi's 100:1 weighting rationale. SNAC's 7 streams don't distinguish semantic from acoustic. SpeechTokenizer shows that layer 1 = semantic, layers 2+ = acoustic. Our equal weighting across all 7 SNAC streams is fundamentally wrong.
+
+- **XY-Tokenizer: Mitigating the Semantic-Acoustic Conflict in Low-Bitrate Speech Codecs** (2025-06) Gong et al. | https://arxiv.org/abs/2506.23325
+  Identifies "semantic-acoustic conflict": codecs must simultaneously preserve acoustic fidelity AND capture semantics, but these objectives compete. Uses multi-stage multi-task learning to balance both. Surpasses distillation-based methods (SpeechTokenizer, Mimi) on semantic benchmarks while matching acoustic quality.
+  **Relevance**: MEDIUM — The "semantic-acoustic conflict" in the codec mirrors our "text-audio conflict" in the LM. Both are multi-objective problems where two goals compete. The codec-level fix (multi-task training of the codec itself) is complementary to LM-level fixes.
+
+- **Factorized RVQ-GAN (HAC): Disentangled Speech Tokenization** (2025-06) Khurana et al. | https://arxiv.org/abs/2506.15456
+  Three separate quantization modules: acoustic (7-layer RVQ), phonetic (VQ from HuBERT distillation), lexical (VQ from LaBSE distillation). Complete separation of acoustic, phonetic, and word-level tokens. Each module has its own codebook.
+  **Relevance**: MEDIUM — Takes disentanglement to the extreme. If we replaced SNAC with HAC, the LM would predict phonetic+lexical tokens (easy, semantic) separately from acoustic tokens (hard, noisy). The audio plateau might only affect acoustic tokens, while semantic prediction converges properly.
+
+### SNAC-Specific Notes
+
+- **SNAC: Multi-Scale Neural Audio Codec** (NeurIPS 2024 Workshop) Siuzdak | https://arxiv.org/abs/2410.14411
+  SNAC's multi-scale design: coarse tokens at low temporal resolution (broad context), fine tokens at high resolution (local detail). 3 codebooks at different frame rates → 7 streams when flattened. Trained for compression (250K iterations), NOT for LM compatibility. No semantic distillation, no consistency training.
+  **Relevance**: HIGH (context) — Confirms SNAC was designed for compression, not for LM prediction. It has no semantic grounding (unlike SpeechTokenizer, X-Codec, HAC). This is the root cause: we're training an LM to predict tokens that were never designed to be predictable.
+
+---
+
+## Codec Landscape Summary
+
+| Codec | Semantic? | Consistent? | Designed for LM? | Used by |
+|-------|-----------|-------------|-------------------|---------|
+| **SNAC** | No | No | No (compression) | Mini-omni |
+| **EnCodec** | No | No (47%) | No (compression) | VALL-E, early work |
+| **SpeechTokenizer** | Layer 1 only | Partial | Yes (AR+NAR) | USLM |
+| **X-Codec** | Yes (HuBERT inject) | Partial | Yes | AAAI 2025 |
+| **Mimi** (Moshi) | Layer 1 (distilled) | Better | Yes | Moshi |
+| **CosyVoice2 FSQ** | Via LLM backbone | 100% utilization | Yes | MinMo, MGM-Omni |
+| **HAC** | Separate modules | By design | Yes | Factorized RVQ-GAN |
+| **XY-Tokenizer** | Multi-task balanced | Better | Yes | 2025 |
+
+**SNAC is the worst choice for LM-based audio prediction.** Every modern codec designed for LMs addresses semantic content and/or consistency. SNAC addresses neither.
+
+This is the strongest evidence yet that our audio plateau is a codec limitation, not an optimization problem.
