@@ -54,6 +54,7 @@ S3_CONFIG = {
     "adam_eps": 1e-8,
     "max_grad_norm": 1.0,
     "audio_weight": 1.0,       # λ for audio loss
+    "cb_weights": [1,1,1,1,1,1,1],  # per-codebook weights (Exp A: Moshi-style)
     "diag_every": 100,         # D1-D3,D5-D7
     "basin_every": 1000,       # D4 (expensive)
     "val_every": 200,
@@ -67,9 +68,13 @@ S3_CONFIG = {
 class OmniS3Dataset(Dataset):
     """Load preprocessed S3 data (from prepare_s3.py, with delay pattern)."""
 
-    def __init__(self, data_path, max_len=2048):
+    def __init__(self, data_path, max_len=2048, s2_mode=False):
         self.data = torch.load(data_path, weights_only=False)
         self.max_len = max_len
+        if s2_mode:
+            orig_len = len(self.data)
+            self.data = [d for d in self.data if d['task'] in ('T1T2', 'A1T2')]
+            print(f"[s2_mode] Filtered {orig_len} → {len(self.data)} (T1T2+A1T2 only)")
         print(f"Loaded {len(self.data)} sequences from {data_path}")
         from collections import Counter
         tasks = Counter(d['task'] for d in self.data)
@@ -278,6 +283,7 @@ class DiagnosticTracker:
     def compute_displacement(self, model):
         """D5: parameter displacement from checkpoint init."""
         total_disp = emb_disp = backbone_disp = lm_head_disp = adapter_disp = 0.0
+        text_emb_disp = audio_emb_disp = 0.0
 
         for name, p in model.named_parameters():
             if not p.requires_grad or name not in self.theta_0:
@@ -286,6 +292,9 @@ class DiagnosticTracker:
             total_disp += d**2
             if "wte" in name:
                 emb_disp += d**2
+                # Split text vs audio embedding displacement
+                text_emb_disp += (p[:TEXT_VOCAB_SIZE].float().cpu() - self.theta_0[name][:TEXT_VOCAB_SIZE]).norm().item()**2
+                audio_emb_disp += (p[TEXT_VOCAB_SIZE:].float().cpu() - self.theta_0[name][TEXT_VOCAB_SIZE:]).norm().item()**2
             elif "lm_head" in name:
                 lm_head_disp += d**2
             elif "whisper_adapter" in name:
@@ -296,6 +305,8 @@ class DiagnosticTracker:
         return {
             "total": total_disp**0.5,
             "embedding": emb_disp**0.5,
+            "text_embedding": text_emb_disp**0.5,
+            "audio_embedding": audio_emb_disp**0.5,
             "backbone": backbone_disp**0.5,
             "lm_head": lm_head_disp**0.5,
             "adapter": adapter_disp**0.5,
@@ -409,6 +420,92 @@ def load_mini_omni_checkpoint(ckpt_dir="/workspace/mini-omni-ckpt"):
     return model
 
 
+def build_post_s1_checkpoint(ckpt_dir="/workspace/mini-omni-ckpt"):
+    """Build a post-S1 checkpoint: Qwen2-0.5B + trained whisper_adapter + fresh audio embeddings.
+
+    Simulates the state after S1 (adapter training) but before S2 (text adaptation).
+    Uses tie_word_embeddings=True (matching published config).
+    """
+    from transformers import AutoModelForCausalLM
+
+    # Load model with published config (tie_word_embeddings=True)
+    config = Config.from_file(f"{ckpt_dir}/model_config.yaml")
+    model = GPT(config)
+
+    # Step 1: Load published checkpoint to extract whisper_adapter weights
+    ckpt = torch.load(f"{ckpt_dir}/lit_model.pth", map_location='cpu', weights_only=True)
+    adapter_weights = {k: v for k, v in ckpt.items() if "whisper_adapter" in k}
+    print(f"Extracted {len(adapter_weights)} whisper_adapter weight tensors from published ckpt")
+    del ckpt
+    gc.collect()
+
+    # Step 2: Load Qwen2-0.5B weights into the model (QKV interleaving etc.)
+    print("Loading Qwen2-0.5B pretrained weights...")
+    qwen = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2-0.5B", torch_dtype=DTYPE)
+    qwen_sd = qwen.state_dict()
+    litgpt_sd = model.state_dict()
+
+    # QKV interleaving (same logic as train_observe.py)
+    for layer_idx in range(24):
+        qp = f"model.layers.{layer_idx}.self_attn"
+        lp = f"transformer.h.{layer_idx}.attn"
+
+        q_w = qwen_sd[f"{qp}.q_proj.weight"]
+        k_w = qwen_sd[f"{qp}.k_proj.weight"]
+        v_w = qwen_sd[f"{qp}.v_proj.weight"]
+        q_b = qwen_sd[f"{qp}.q_proj.bias"]
+        k_b = qwen_sd[f"{qp}.k_proj.bias"]
+        v_b = qwen_sd[f"{qp}.v_proj.bias"]
+
+        n_kv_groups, q_per_kv, head_size = 2, 7, 64
+        q_w = q_w.view(n_kv_groups, q_per_kv, head_size, -1)
+        k_w = k_w.view(n_kv_groups, 1, head_size, -1)
+        v_w = v_w.view(n_kv_groups, 1, head_size, -1)
+        qkv_w = torch.cat([q_w, k_w, v_w], dim=1).reshape(-1, q_w.shape[-1])
+
+        q_b = q_b.view(n_kv_groups, q_per_kv, head_size)
+        k_b = k_b.view(n_kv_groups, 1, head_size)
+        v_b = v_b.view(n_kv_groups, 1, head_size)
+        qkv_b = torch.cat([q_b, k_b, v_b], dim=1).reshape(-1)
+
+        litgpt_sd[f"{lp}.attn.weight"] = qkv_w
+        litgpt_sd[f"{lp}.attn.bias"] = qkv_b
+        litgpt_sd[f"{lp}.proj.weight"] = qwen_sd[f"{qp}.o_proj.weight"]
+
+        lp_block = f"transformer.h.{layer_idx}"
+        litgpt_sd[f"{lp_block}.mlp.fc_1.weight"] = qwen_sd[f"model.layers.{layer_idx}.mlp.gate_proj.weight"]
+        litgpt_sd[f"{lp_block}.mlp.fc_2.weight"] = qwen_sd[f"model.layers.{layer_idx}.mlp.up_proj.weight"]
+        litgpt_sd[f"{lp_block}.mlp.proj.weight"] = qwen_sd[f"model.layers.{layer_idx}.mlp.down_proj.weight"]
+        litgpt_sd[f"{lp_block}.norm_1.weight"] = qwen_sd[f"model.layers.{layer_idx}.input_layernorm.weight"]
+        litgpt_sd[f"{lp_block}.norm_2.weight"] = qwen_sd[f"model.layers.{layer_idx}.post_attention_layernorm.weight"]
+
+    litgpt_sd["transformer.ln_f.weight"] = qwen_sd["model.norm.weight"]
+
+    # Step 3: Embeddings — text from Qwen2, audio random
+    qwen_emb = qwen_sd["model.embed_tokens.weight"]  # (151936, 896)
+    full_emb = litgpt_sd["transformer.wte.weight"]    # (181120, 896)
+    full_emb[:qwen_emb.shape[0]] = qwen_emb
+    nn.init.normal_(full_emb[TEXT_VOCAB_SIZE:], std=0.02)
+    litgpt_sd["transformer.wte.weight"] = full_emb
+    # lm_head shares wte (tie_word_embeddings=True), no separate init needed
+
+    del qwen, qwen_sd
+    gc.collect()
+
+    # Step 4: Copy whisper_adapter weights from published ckpt
+    for k, v in adapter_weights.items():
+        litgpt_sd[k] = v
+    print(f"Copied whisper_adapter weights from published checkpoint")
+
+    model.load_state_dict(litgpt_sd, strict=False)
+    print(f"Built post-S1 checkpoint: Qwen2 LLM + trained adapters + fresh audio embeddings")
+
+    n_params = sum(p.numel() for p in model.parameters())
+    print(f"Total params: {n_params:,}")
+
+    return model
+
+
 # ============================================================================
 # Training loop
 # ============================================================================
@@ -423,12 +520,27 @@ def train(config=None, output_dir="results/s3_adam"):
         json.dump(config, f, indent=2)
 
     # ---- Model ----
-    print("Loading mini-omni checkpoint...")
-    model = load_mini_omni_checkpoint()
+    checkpoint_mode = config.get("checkpoint_mode", "published")
+    if checkpoint_mode == "post_s1":
+        print("Building post-S1 checkpoint (Qwen2 + adapters, no S2)...")
+        model = build_post_s1_checkpoint()
+    else:
+        print("Loading mini-omni checkpoint...")
+        model = load_mini_omni_checkpoint()
 
-    # S3: ALL weights unfrozen (including whisper adapter)
+    # S3: ALL weights unfrozen (including whisper adapter) by default
     for p in model.parameters():
         p.requires_grad = True
+
+    # S2 mode: freeze whisper_adapter
+    s2_mode = config.get("s2_mode", False)
+    if s2_mode:
+        n_frozen = 0
+        for name, p in model.named_parameters():
+            if "whisper_adapter" in name:
+                p.requires_grad = False
+                n_frozen += 1
+        print(f"[s2_mode] Froze {n_frozen} whisper_adapter params")
 
     # Gradient checkpointing for VRAM
     import types
@@ -454,16 +566,16 @@ def train(config=None, output_dir="results/s3_adam"):
 
     # ---- Adjust batch for memory-hungry methods ----
     method = config.get("method", "baseline")
-    if method == "grad_proj":
+    if method in ("grad_proj", "m_sam"):
         # 2 forward passes → need smaller batch
         config["batch_size"] = 1
         config["grad_accum"] = 32
-        print(f"  [grad_proj] batch_size=1, grad_accum=32 (2x forward passes)")
+        print(f"  [{method}] batch_size=1, grad_accum=32 (2x forward passes)")
 
     # ---- Data ----
     data_dir = "/root/.cache/autoresearch/s3_data"
-    train_dataset = OmniS3Dataset(f"{data_dir}/train.pt")
-    val_dataset = OmniS3Dataset(f"{data_dir}/val.pt")
+    train_dataset = OmniS3Dataset(f"{data_dir}/train.pt", s2_mode=s2_mode)
+    val_dataset = OmniS3Dataset(f"{data_dir}/val.pt")  # val always full (all 4 task types)
 
     train_loader = DataLoader(
         train_dataset, batch_size=config["batch_size"],
@@ -509,6 +621,8 @@ def train(config=None, output_dir="results/s3_adam"):
 
         # ---- Method: gradient projection ----
         method = config.get("method", "baseline")
+        cb_w = config.get("cb_weights", [1]*7)
+        cb_w_sum = sum(cb_w)
 
         if method == "grad_proj":
             # Two separate forward+backward passes (no retain_graph, saves memory)
@@ -526,12 +640,11 @@ def train(config=None, output_dir="results/s3_adam"):
             # Pass 2: audio loss forward+backward
             model.zero_grad()
             text_loss, audio_losses = compute_losses(model, streams, lm_text, lm_audio)
-            audio_loss = sum(audio_losses) / 7
+            audio_loss = sum(cb_w[i] * audio_losses[i] for i in range(7)) / cb_w_sum
             scaled_audio = (audio_weight * audio_loss) / config["grad_accum"]
             scaled_audio.backward()
 
             # Project: remove destructive component of audio grad
-            # g_audio' = g_audio - min(0, cos) * proj(g_audio onto g_text)
             dot_global = 0.0
             t_norm2 = 0.0
             a_norm2 = 0.0
@@ -544,7 +657,6 @@ def train(config=None, output_dir="results/s3_adam"):
             cos_phi_step = dot_global / (max(t_norm2, 1e-10)**0.5 * max(a_norm2, 1e-10)**0.5)
 
             if cos_phi_step < 0 and t_norm2 > 0:
-                # Remove destructive component
                 proj_scale = dot_global / t_norm2
                 for name, p in model.named_parameters():
                     if p.requires_grad and p.grad is not None and name in text_grads:
@@ -566,10 +678,57 @@ def train(config=None, output_dir="results/s3_adam"):
                 accum_cb_losses[i] += audio_losses[i].item()
             accum_steps += 1
 
-        else:
-            # Standard forward-backward (baseline, adaptive_lambda, lambda_N)
+        elif method == "m_sam":
+            # M-SAM: modality-aware SAM (perturb along text gradient direction)
+            audio_weight = config.get("audio_weight", 1.0)
+            sam_rho = config.get("sam_rho", 0.05)
+
+            # Step 1: normal forward-backward to get text gradient direction
+            model.zero_grad()
             text_loss, audio_losses = compute_losses(model, streams, lm_text, lm_audio)
-            audio_loss = sum(audio_losses) / 7
+            audio_loss = sum(cb_w[i] * audio_losses[i] for i in range(7)) / cb_w_sum
+            total_loss = text_loss + audio_weight * audio_loss
+            (total_loss / config["grad_accum"]).backward()
+
+            # Step 2: compute perturbation from text gradient (use combined grad as proxy)
+            text_grad_norm_sq = 0.0
+            for p in model.parameters():
+                if p.requires_grad and p.grad is not None:
+                    text_grad_norm_sq += p.grad.norm().item()**2
+            text_grad_norm = text_grad_norm_sq**0.5
+
+            # Save params, apply perturbation
+            with torch.no_grad():
+                old_params = {n: p.data.clone() for n, p in model.named_parameters()
+                              if p.requires_grad}
+                for n, p in model.named_parameters():
+                    if p.requires_grad and p.grad is not None:
+                        p.data.add_(sam_rho * p.grad / (text_grad_norm + 1e-12))
+
+            # Step 3: forward-backward at perturbed point
+            model.zero_grad()
+            text_loss2, audio_losses2 = compute_losses(model, streams, lm_text, lm_audio)
+            audio_loss2 = sum(cb_w[i] * audio_losses2[i] for i in range(7)) / cb_w_sum
+            total_loss2 = text_loss2 + audio_weight * audio_loss2
+            (total_loss2 / config["grad_accum"]).backward()
+
+            # Step 4: restore params (use perturbed gradient for update)
+            with torch.no_grad():
+                for n, p in model.named_parameters():
+                    if p.requires_grad:
+                        p.data.copy_(old_params[n])
+            del old_params
+
+            accum_text_loss += text_loss.item()
+            accum_audio_loss += audio_loss.item()
+            for i in range(7):
+                accum_cb_losses[i] += audio_losses[i].item()
+            accum_steps += 1
+
+        else:
+            # Standard forward-backward (baseline, adaptive_lambda)
+            text_loss, audio_losses = compute_losses(model, streams, lm_text, lm_audio)
+            audio_loss = sum(cb_w[i] * audio_losses[i] for i in range(7)) / cb_w_sum
 
             # Adaptive λ: adjust based on ρ
             audio_weight = config.get("audio_weight", 1.0)
@@ -590,7 +749,7 @@ def train(config=None, output_dir="results/s3_adam"):
 
         if accum_steps >= config["grad_accum"]:
             # Gradient clipping
-            if method != "grad_proj":
+            if method not in ("grad_proj", "m_sam"):
                 scaler.unscale_(optimizer)
             grad_norm = torch.nn.utils.clip_grad_norm_(
                 [p for p in model.parameters() if p.requires_grad],
@@ -604,7 +763,7 @@ def train(config=None, output_dir="results/s3_adam"):
             for pg in optimizer.param_groups:
                 pg['lr'] = lr
 
-            if method == "grad_proj":
+            if method in ("grad_proj", "m_sam"):
                 optimizer.step()
             else:
                 scaler.step(optimizer)
@@ -638,6 +797,7 @@ def train(config=None, output_dir="results/s3_adam"):
                     "text_loss": avg_text,
                     "audio_loss": avg_audio,
                     "cb_losses_train": {f"cb{i}": avg_cbs[i] for i in range(7)},
+                    "cb_weighted_train": {f"cb{i}": cb_w[i] * avg_cbs[i] for i in range(7)},
                     "lr": lr,
                     "grad_norm": grad_norm.item() if torch.is_tensor(grad_norm) else grad_norm,
                 }
@@ -756,12 +916,25 @@ if __name__ == "__main__":
     parser.add_argument("--warmup_steps", type=int, default=None)
     parser.add_argument("--weight_decay", type=float, default=None)
     parser.add_argument("--method", default="baseline",
-                        choices=["baseline", "grad_proj", "adaptive_lambda"],
+                        choices=["baseline", "grad_proj", "adaptive_lambda", "m_sam"],
                         help="Training method variant")
     parser.add_argument("--adaptive_alpha", type=float, default=0.1,
                         help="Adaptive λ step size")
     parser.add_argument("--no_save_model", action="store_true",
                         help="Skip saving model checkpoints (save disk)")
+    # Exp A: codebook weighting
+    parser.add_argument("--cb_weights", type=str, default=None,
+                        help="Per-codebook weights, comma-separated (e.g. '100,10,1,1,10,1,1')")
+    # Exp B: M-SAM
+    parser.add_argument("--sam_rho", type=float, default=0.05,
+                        help="SAM perturbation radius for m_sam method")
+    # Exp C: checkpoint mode
+    parser.add_argument("--checkpoint_mode", default="published",
+                        choices=["published", "post_s1"],
+                        help="Checkpoint init: published (post-S3) or post_s1 (Qwen2+adapters)")
+    # Exp D: S2 mode
+    parser.add_argument("--s2_mode", action="store_true",
+                        help="Authentic S2: text-only training, freeze adapters, full val diagnostics")
     args = parser.parse_args()
 
     config = dict(S3_CONFIG)
@@ -769,6 +942,12 @@ if __name__ == "__main__":
     config["audio_weight"] = args.audio_weight
     config["method"] = args.method
     config["adaptive_alpha"] = args.adaptive_alpha
+    config["sam_rho"] = args.sam_rho
+    config["checkpoint_mode"] = args.checkpoint_mode
+    config["s2_mode"] = args.s2_mode
+    if args.cb_weights is not None:
+        config["cb_weights"] = [float(x) for x in args.cb_weights.split(",")]
+        assert len(config["cb_weights"]) == 7, f"cb_weights must have 7 values, got {len(config['cb_weights'])}"
     if args.no_save_model:
         config["save_every"] = 999999  # effectively never
     if args.lr_max is not None:
@@ -779,5 +958,13 @@ if __name__ == "__main__":
         config["warmup_steps"] = args.warmup_steps
     if args.weight_decay is not None:
         config["weight_decay"] = args.weight_decay
+
+    # S2 mode defaults
+    if args.s2_mode:
+        config["audio_weight"] = 0.0  # no audio loss in training
+        if args.lr_max is None:
+            config["lr_max"] = 2e-4
+        if args.lr_min is None:
+            config["lr_min"] = 2e-6
 
     train(config=config, output_dir=args.output_dir)
