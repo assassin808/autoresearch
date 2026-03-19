@@ -1,0 +1,1112 @@
+[
+  {
+    "step": 100,
+    "time": 692.8945968151093,
+    "text_loss": 1.071380615234375,
+    "audio_loss": 1.71435546875,
+    "cb_losses_train": {
+      "cb0": 2.2294921875,
+      "cb1": 1.9111328125,
+      "cb2": 2.1064453125,
+      "cb3": 1.76513671875,
+      "cb4": 1.12646484375,
+      "cb5": 1.48095703125,
+      "cb6": 1.384765625
+    },
+    "lr": 3.188e-06,
+    "grad_norm": 0.3606511652469635,
+    "displacement": {
+      "total": 0.6980765274730385,
+      "embedding": 0.0,
+      "backbone": 0.6363558081905718,
+      "lm_head": 0.2869880199432373,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 766.5172072787689,
+      "audio_rank": 635.3551000879012
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 200,
+    "time": 1395.3112046718597,
+    "text_loss": 0.7651596069335938,
+    "audio_loss": 2.04736328125,
+    "cb_losses_train": {
+      "cb0": 2.625,
+      "cb1": 2.310546875,
+      "cb2": 2.525390625,
+      "cb3": 2.0615234375,
+      "cb4": 1.34619140625,
+      "cb5": 1.80224609375,
+      "cb6": 1.64599609375
+    },
+    "lr": 4.388e-06,
+    "grad_norm": 0.28399890661239624,
+    "displacement": {
+      "total": 1.1722741433622725,
+      "embedding": 0.0,
+      "backbone": 1.0263370218576908,
+      "lm_head": 0.5664441585540771,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 765.9004849513386,
+      "audio_rank": 635.9967921844653
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 300,
+    "time": 2100.978350162506,
+    "text_loss": 0.7064208984375,
+    "audio_loss": 2.3837890625,
+    "cb_losses_train": {
+      "cb0": 3.080078125,
+      "cb1": 2.66357421875,
+      "cb2": 2.9501953125,
+      "cb3": 2.42333984375,
+      "cb4": 1.55517578125,
+      "cb5": 2.1328125,
+      "cb6": 1.87744140625
+    },
+    "lr": 5.588e-06,
+    "grad_norm": 0.11559312045574188,
+    "displacement": {
+      "total": 1.6969849232087393,
+      "embedding": 0.0,
+      "backbone": 1.4364570353915396,
+      "lm_head": 0.9035203456878662,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 765.9121717544443,
+      "audio_rank": 635.2939049292253
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 400,
+    "time": 2802.517603158951,
+    "text_loss": 0.811309814453125,
+    "audio_loss": 1.46630859375,
+    "cb_losses_train": {
+      "cb0": 1.916015625,
+      "cb1": 1.640625,
+      "cb2": 1.814453125,
+      "cb3": 1.44287109375,
+      "cb4": 0.98828125,
+      "cb5": 1.29248046875,
+      "cb6": 1.16552734375
+    },
+    "lr": 6.788e-06,
+    "grad_norm": 0.5186929106712341,
+    "displacement": {
+      "total": 2.305637012440426,
+      "embedding": 0.0,
+      "backbone": 1.882045493516137,
+      "lm_head": 1.331865906715393,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 766.6999810096461,
+      "audio_rank": 636.586312828693
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 500,
+    "time": 3501.3155970573425,
+    "text_loss": 1.263397216796875,
+    "audio_loss": 1.59716796875,
+    "cb_losses_train": {
+      "cb0": 2.0791015625,
+      "cb1": 1.76318359375,
+      "cb2": 1.998046875,
+      "cb3": 1.634765625,
+      "cb4": 1.01806640625,
+      "cb5": 1.404296875,
+      "cb6": 1.28271484375
+    },
+    "lr": 7.988e-06,
+    "grad_norm": 0.27759096026420593,
+    "displacement": {
+      "total": 2.994730625477466,
+      "embedding": 0.0,
+      "backbone": 2.352056100119271,
+      "lm_head": 1.8537107706069946,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 765.6543730897677,
+      "audio_rank": 636.2995245806314
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 600,
+    "time": 4204.2704792022705,
+    "text_loss": 0.8447265625,
+    "audio_loss": 1.72607421875,
+    "cb_losses_train": {
+      "cb0": 2.2265625,
+      "cb1": 1.90478515625,
+      "cb2": 2.166015625,
+      "cb3": 1.7705078125,
+      "cb4": 1.103515625,
+      "cb5": 1.5205078125,
+      "cb6": 1.40087890625
+    },
+    "lr": 9.187999999999999e-06,
+    "grad_norm": 0.7157366275787354,
+    "displacement": {
+      "total": 3.7346287330193957,
+      "embedding": 0.0,
+      "backbone": 2.844951902321748,
+      "lm_head": 2.4194421768188477,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 766.7910185830909,
+      "audio_rank": 636.9090661529332
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 700,
+    "time": 4906.53720331192,
+    "text_loss": 0.958099365234375,
+    "audio_loss": 1.21533203125,
+    "cb_losses_train": {
+      "cb0": 1.5634765625,
+      "cb1": 1.34228515625,
+      "cb2": 1.521484375,
+      "cb3": 1.25439453125,
+      "cb4": 0.76806640625,
+      "cb5": 1.07470703125,
+      "cb6": 0.9833984375
+    },
+    "lr": 1.0388e-05,
+    "grad_norm": 0.11389004439115524,
+    "displacement": {
+      "total": 4.5497496834696785,
+      "embedding": 0.0,
+      "backbone": 3.378779176270906,
+      "lm_head": 3.0469777584075928,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 766.1788253915254,
+      "audio_rank": 637.4395504850481
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 800,
+    "time": 5603.896369218826,
+    "text_loss": 0.908203125,
+    "audio_loss": 2.0537109375,
+    "cb_losses_train": {
+      "cb0": 2.5927734375,
+      "cb1": 2.302734375,
+      "cb2": 2.5576171875,
+      "cb3": 2.05908203125,
+      "cb4": 1.359619140625,
+      "cb5": 1.82861328125,
+      "cb6": 1.6748046875
+    },
+    "lr": 1.1588e-05,
+    "grad_norm": 0.3366577923297882,
+    "displacement": {
+      "total": 5.452626785097067,
+      "embedding": 0.0,
+      "backbone": 3.93404262219905,
+      "lm_head": 3.7755062580108643,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 765.7456516441429,
+      "audio_rank": 638.121685967031
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 900,
+    "time": 6304.495312929153,
+    "text_loss": 0.890106201171875,
+    "audio_loss": 1.81787109375,
+    "cb_losses_train": {
+      "cb0": 2.3125,
+      "cb1": 2.00927734375,
+      "cb2": 2.2724609375,
+      "cb3": 1.85546875,
+      "cb4": 1.19677734375,
+      "cb5": 1.60302734375,
+      "cb6": 1.47900390625
+    },
+    "lr": 1.2788e-05,
+    "grad_norm": 0.4738944470882416,
+    "displacement": {
+      "total": 6.40244918835307,
+      "embedding": 0.0,
+      "backbone": 4.488183625482922,
+      "lm_head": 4.565913200378418,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 765.3200214254437,
+      "audio_rank": 637.6626924024498
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 1000,
+    "time": 6999.14696598053,
+    "text_loss": 1.1582794189453125,
+    "audio_loss": 1.564453125,
+    "cb_losses_train": {
+      "cb0": 1.97265625,
+      "cb1": 1.72509765625,
+      "cb2": 1.9423828125,
+      "cb3": 1.60693359375,
+      "cb4": 1.0126953125,
+      "cb5": 1.42529296875,
+      "cb6": 1.27001953125
+    },
+    "lr": 1.3988e-05,
+    "grad_norm": 0.23974628746509552,
+    "displacement": {
+      "total": 7.422260440816408,
+      "embedding": 0.0,
+      "backbone": 5.10058629187297,
+      "lm_head": 5.392028331756592,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 766.7365409853107,
+      "audio_rank": 638.1843707527482
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {},
+    "basin": {
+      "baseline_loss": 0.76640625,
+      "perturbations": {
+        "0.01": {
+          "mean_loss": 3.295625,
+          "max_loss": 5.33125,
+          "degradation": 2.52921875
+        },
+        "0.05": {
+          "mean_loss": 29.49,
+          "max_loss": 32.25,
+          "degradation": 28.72359375
+        },
+        "0.1": {
+          "mean_loss": 54.89,
+          "max_loss": 56.7,
+          "degradation": 54.12359375
+        },
+        "0.5": {
+          "mean_loss": 270.43999999999994,
+          "max_loss": 277.2,
+          "degradation": 269.67359374999995
+        },
+        "1.0": {
+          "mean_loss": 544.48,
+          "max_loss": 560.0,
+          "degradation": 543.71359375
+        }
+      }
+    }
+  },
+  {
+    "step": 1100,
+    "time": 7706.98775100708,
+    "text_loss": 1.1837158203125,
+    "audio_loss": 1.56396484375,
+    "cb_losses_train": {
+      "cb0": 2.0224609375,
+      "cb1": 1.72900390625,
+      "cb2": 1.9326171875,
+      "cb3": 1.59130859375,
+      "cb4": 1.00439453125,
+      "cb5": 1.4150390625,
+      "cb6": 1.25048828125
+    },
+    "lr": 1.5188000000000001e-05,
+    "grad_norm": 0.34754619002342224,
+    "displacement": {
+      "total": 8.567535909528772,
+      "embedding": 0.0,
+      "backbone": 5.726359521458377,
+      "lm_head": 6.372713565826416,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 765.8106486069955,
+      "audio_rank": 637.8396806170219
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 1200,
+    "time": 8404.810069084167,
+    "text_loss": 0.9110107421875,
+    "audio_loss": 2.14990234375,
+    "cb_losses_train": {
+      "cb0": 2.7275390625,
+      "cb1": 2.349609375,
+      "cb2": 2.6826171875,
+      "cb3": 2.189453125,
+      "cb4": 1.41748046875,
+      "cb5": 1.92919921875,
+      "cb6": 1.74267578125
+    },
+    "lr": 1.6388e-05,
+    "grad_norm": 0.11264018714427948,
+    "displacement": {
+      "total": 9.749529093233054,
+      "embedding": 0.0,
+      "backbone": 6.381225146643403,
+      "lm_head": 7.3711113929748535,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 766.411218479969,
+      "audio_rank": 638.9934348968077
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 1300,
+    "time": 9108.303642988205,
+    "text_loss": 0.849151611328125,
+    "audio_loss": 2.05517578125,
+    "cb_losses_train": {
+      "cb0": 2.6328125,
+      "cb1": 2.22119140625,
+      "cb2": 2.58984375,
+      "cb3": 2.1240234375,
+      "cb4": 1.30810546875,
+      "cb5": 1.84375,
+      "cb6": 1.6845703125
+    },
+    "lr": 1.7588e-05,
+    "grad_norm": 0.3415120840072632,
+    "displacement": {
+      "total": 11.010188857268949,
+      "embedding": 0.0,
+      "backbone": 7.076079979878854,
+      "lm_head": 8.4352445602417,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 766.4985668071973,
+      "audio_rank": 639.6391066203512
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 1400,
+    "time": 9806.585725784302,
+    "text_loss": 0.9813232421875,
+    "audio_loss": 2.0361328125,
+    "cb_losses_train": {
+      "cb0": 2.5537109375,
+      "cb1": 2.21044921875,
+      "cb2": 2.583984375,
+      "cb3": 2.11083984375,
+      "cb4": 1.3330078125,
+      "cb5": 1.81787109375,
+      "cb6": 1.6494140625
+    },
+    "lr": 1.8788e-05,
+    "grad_norm": 0.16739754378795624,
+    "displacement": {
+      "total": 12.305284914629269,
+      "embedding": 0.0,
+      "backbone": 7.724832440165287,
+      "lm_head": 9.578465461730957,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 766.010420993623,
+      "audio_rank": 640.119362638049
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 1500,
+    "time": 10502.159854888916,
+    "text_loss": 0.9227294921875,
+    "audio_loss": 1.8974609375,
+    "cb_losses_train": {
+      "cb0": 2.4287109375,
+      "cb1": 2.05322265625,
+      "cb2": 2.3701171875,
+      "cb3": 1.95458984375,
+      "cb4": 1.21728515625,
+      "cb5": 1.6923828125,
+      "cb6": 1.57421875
+    },
+    "lr": 1.9988e-05,
+    "grad_norm": 0.08720901608467102,
+    "displacement": {
+      "total": 13.713147603571995,
+      "embedding": 0.0,
+      "backbone": 8.452062203489751,
+      "lm_head": 10.798752784729004,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 764.8333555719225,
+      "audio_rank": 639.6192816874819
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 1600,
+    "time": 11200.406182050705,
+    "text_loss": 1.059967041015625,
+    "audio_loss": 1.53466796875,
+    "cb_losses_train": {
+      "cb0": 1.95703125,
+      "cb1": 1.681640625,
+      "cb2": 1.8876953125,
+      "cb3": 1.56640625,
+      "cb4": 0.9736328125,
+      "cb5": 1.3974609375,
+      "cb6": 1.2744140625
+    },
+    "lr": 1.980722813892925e-05,
+    "grad_norm": 0.14941920340061188,
+    "displacement": {
+      "total": 15.099850845179333,
+      "embedding": 0.0,
+      "backbone": 9.109832715622124,
+      "lm_head": 12.042277336120605,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 765.2981257572172,
+      "audio_rank": 641.1099980303942
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 1700,
+    "time": 11900.641657352448,
+    "text_loss": 0.93182373046875,
+    "audio_loss": 1.7763671875,
+    "cb_losses_train": {
+      "cb0": 2.2333984375,
+      "cb1": 1.939453125,
+      "cb2": 2.25,
+      "cb3": 1.83544921875,
+      "cb4": 1.13232421875,
+      "cb5": 1.591796875,
+      "cb6": 1.4609375
+    },
+    "lr": 1.92295578856194e-05,
+    "grad_norm": 0.27660003304481506,
+    "displacement": {
+      "total": 16.456729107246957,
+      "embedding": 0.0,
+      "backbone": 9.760086308600997,
+      "lm_head": 13.250081062316895,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 764.5894095391166,
+      "audio_rank": 641.2998689891039
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 1800,
+    "time": 12602.05738902092,
+    "text_loss": 0.73388671875,
+    "audio_loss": 2.28759765625,
+    "cb_losses_train": {
+      "cb0": 2.87109375,
+      "cb1": 2.48095703125,
+      "cb2": 2.87890625,
+      "cb3": 2.35302734375,
+      "cb4": 1.4755859375,
+      "cb5": 2.05419921875,
+      "cb6": 1.88916015625
+    },
+    "lr": 1.8292216462907918e-05,
+    "grad_norm": 0.388572633266449,
+    "displacement": {
+      "total": 17.702396843066442,
+      "embedding": 0.0,
+      "backbone": 10.283229821872318,
+      "lm_head": 14.40937328338623,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 766.4207203259031,
+      "audio_rank": 642.615526232156
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 1900,
+    "time": 13298.240582227707,
+    "text_loss": 0.837646484375,
+    "audio_loss": 2.26416015625,
+    "cb_losses_train": {
+      "cb0": 2.8837890625,
+      "cb1": 2.4560546875,
+      "cb2": 2.83056640625,
+      "cb3": 2.33056640625,
+      "cb4": 1.43896484375,
+      "cb5": 2.0322265625,
+      "cb6": 1.87353515625
+    },
+    "lr": 1.703617018883048e-05,
+    "grad_norm": 0.13680654764175415,
+    "displacement": {
+      "total": 18.881409506849778,
+      "embedding": 0.0,
+      "backbone": 10.723328038527509,
+      "lm_head": 15.540844917297363,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 765.3904567401174,
+      "audio_rank": 641.9748090217432
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 2000,
+    "time": 13997.720086812973,
+    "text_loss": 1.0341796875,
+    "audio_loss": 1.771484375,
+    "cb_losses_train": {
+      "cb0": 2.2734375,
+      "cb1": 1.92822265625,
+      "cb2": 2.240234375,
+      "cb3": 1.82666015625,
+      "cb4": 1.1455078125,
+      "cb5": 1.56787109375,
+      "cb6": 1.4326171875
+    },
+    "lr": 1.5516314312742996e-05,
+    "grad_norm": 0.17352800071239471,
+    "displacement": {
+      "total": 19.929190675251693,
+      "embedding": 0.0,
+      "backbone": 11.100179041862694,
+      "lm_head": 16.55169677734375,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 766.1254872382694,
+      "audio_rank": 642.5306526772014
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {},
+    "basin": {
+      "baseline_loss": 0.80703125,
+      "perturbations": {
+        "0.01": {
+          "mean_loss": 2.8409375,
+          "max_loss": 5.8,
+          "degradation": 2.03390625
+        },
+        "0.05": {
+          "mean_loss": 29.01,
+          "max_loss": 32.0,
+          "degradation": 28.20296875
+        },
+        "0.1": {
+          "mean_loss": 54.75,
+          "max_loss": 56.2,
+          "degradation": 53.94296875
+        },
+        "0.5": {
+          "mean_loss": 271.8,
+          "max_loss": 282.0,
+          "degradation": 270.99296875
+        },
+        "1.0": {
+          "mean_loss": 543.76,
+          "max_loss": 559.2,
+          "degradation": 542.95296875
+        }
+      }
+    }
+  },
+  {
+    "step": 2100,
+    "time": 14701.069438695908,
+    "text_loss": 0.5498046875,
+    "audio_loss": 2.72265625,
+    "cb_losses_train": {
+      "cb0": 3.4365234375,
+      "cb1": 2.95751953125,
+      "cb2": 3.4599609375,
+      "cb3": 2.8095703125,
+      "cb4": 1.724609375,
+      "cb5": 2.45556640625,
+      "cb6": 2.22021484375
+    },
+    "lr": 1.3799073829508136e-05,
+    "grad_norm": 0.6964553594589233,
+    "displacement": {
+      "total": 20.817506110712706,
+      "embedding": 0.0,
+      "backbone": 11.383154946857331,
+      "lm_head": 17.42963981628418,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 767.4900644669433,
+      "audio_rank": 643.4734698808116
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 2200,
+    "time": 15394.93261218071,
+    "text_loss": 1.021728515625,
+    "audio_loss": 2.02294921875,
+    "cb_losses_train": {
+      "cb0": 2.556640625,
+      "cb1": 2.16650390625,
+      "cb2": 2.5224609375,
+      "cb3": 2.08935546875,
+      "cb4": 1.30517578125,
+      "cb5": 1.8291015625,
+      "cb6": 1.67822265625
+    },
+    "lr": 1.195950038847734e-05,
+    "grad_norm": 0.5568227767944336,
+    "displacement": {
+      "total": 21.56563425407604,
+      "embedding": 0.0,
+      "backbone": 11.602525937595404,
+      "lm_head": 18.178503036499023,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 766.8692683478,
+      "audio_rank": 643.3617927028091
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 2300,
+    "time": 16099.886039018631,
+    "text_loss": 1.04571533203125,
+    "audio_loss": 1.63916015625,
+    "cb_losses_train": {
+      "cb0": 2.07421875,
+      "cb1": 1.779296875,
+      "cb2": 2.0703125,
+      "cb3": 1.71337890625,
+      "cb4": 1.0400390625,
+      "cb5": 1.478515625,
+      "cb6": 1.32568359375
+    },
+    "lr": 1.0077992176276395e-05,
+    "grad_norm": 0.09759524464607239,
+    "displacement": {
+      "total": 22.165461608285295,
+      "embedding": 0.0,
+      "backbone": 11.757622645250141,
+      "lm_head": 18.790050506591797,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 765.9260500647498,
+      "audio_rank": 643.7257352705135
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 2400,
+    "time": 16799.346824884415,
+    "text_loss": 0.8741455078125,
+    "audio_loss": 1.7900390625,
+    "cb_losses_train": {
+      "cb0": 2.263671875,
+      "cb1": 1.9208984375,
+      "cb2": 2.2880859375,
+      "cb3": 1.85302734375,
+      "cb4": 1.140625,
+      "cb5": 1.5986328125,
+      "cb6": 1.47900390625
+    },
+    "lr": 8.236780130256573e-06,
+    "grad_norm": 0.45769354701042175,
+    "displacement": {
+      "total": 22.667145453840895,
+      "embedding": 0.0,
+      "backbone": 11.87039343296923,
+      "lm_head": 19.310443878173828,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 765.9238587358778,
+      "audio_rank": 643.8181345587275
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 2500,
+    "time": 17497.801532506943,
+    "text_loss": 0.82550048828125,
+    "audio_loss": 1.88671875,
+    "cb_losses_train": {
+      "cb0": 2.375,
+      "cb1": 2.0810546875,
+      "cb2": 2.37890625,
+      "cb3": 1.9453125,
+      "cb4": 1.179443359375,
+      "cb5": 1.69482421875,
+      "cb6": 1.556640625
+    },
+    "lr": 6.516334051944584e-06,
+    "grad_norm": 0.42261800169944763,
+    "displacement": {
+      "total": 23.091904486692684,
+      "embedding": 0.0,
+      "backbone": 11.941025503496892,
+      "lm_head": 19.764816284179688,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 765.1357524353883,
+      "audio_rank": 643.9274345573696
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 2600,
+    "time": 18200.713141679764,
+    "text_loss": 0.914794921875,
+    "audio_loss": 1.8818359375,
+    "cb_losses_train": {
+      "cb0": 2.3984375,
+      "cb1": 2.05908203125,
+      "cb2": 2.37255859375,
+      "cb3": 1.90869140625,
+      "cb4": 1.20556640625,
+      "cb5": 1.70751953125,
+      "cb6": 1.5341796875
+    },
+    "lr": 4.991845690578885e-06,
+    "grad_norm": 0.36685600876808167,
+    "displacement": {
+      "total": 23.41215754186727,
+      "embedding": 0.0,
+      "backbone": 11.981890623798922,
+      "lm_head": 20.11376190185547,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 765.828907173324,
+      "audio_rank": 643.4627308482989
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 2700,
+    "time": 18896.387529850006,
+    "text_loss": 1.043304443359375,
+    "audio_loss": 1.6689453125,
+    "cb_losses_train": {
+      "cb0": 2.12890625,
+      "cb1": 1.82275390625,
+      "cb2": 2.0888671875,
+      "cb3": 1.7001953125,
+      "cb4": 1.08154296875,
+      "cb5": 1.51904296875,
+      "cb6": 1.375
+    },
+    "lr": 3.729942502857942e-06,
+    "grad_norm": 0.2577803134918213,
+    "displacement": {
+      "total": 23.635007107811536,
+      "embedding": 0.0,
+      "backbone": 12.008713666482322,
+      "lm_head": 20.356924057006836,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 766.3754048887122,
+      "audio_rank": 643.9400236700772
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 2800,
+    "time": 19583.581587791443,
+    "text_loss": 1.0657958984375,
+    "audio_loss": 1.87158203125,
+    "cb_losses_train": {
+      "cb0": 2.3818359375,
+      "cb1": 2.03955078125,
+      "cb2": 2.365234375,
+      "cb3": 1.92431640625,
+      "cb4": 1.18359375,
+      "cb5": 1.6640625,
+      "cb6": 1.548828125
+    },
+    "lr": 2.785775713368475e-06,
+    "grad_norm": 0.34369513392448425,
+    "displacement": {
+      "total": 23.79478286127833,
+      "embedding": 0.0,
+      "backbone": 12.022548090436292,
+      "lm_head": 20.53411865234375,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 767.1055286930331,
+      "audio_rank": 645.0199177775373
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 2900,
+    "time": 20278.828256845474,
+    "text_loss": 0.68157958984375,
+    "audio_loss": 2.01416015625,
+    "cb_losses_train": {
+      "cb0": 2.5537109375,
+      "cb1": 2.197265625,
+      "cb2": 2.5,
+      "cb3": 2.0703125,
+      "cb4": 1.318359375,
+      "cb5": 1.81298828125,
+      "cb6": 1.6669921875
+    },
+    "lr": 2.2006099414260924e-06,
+    "grad_norm": 0.10108894854784012,
+    "displacement": {
+      "total": 23.922103034423884,
+      "embedding": 0.0,
+      "backbone": 12.03153960952905,
+      "lm_head": 20.676292419433594,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 765.6635004555566,
+      "audio_rank": 644.4471703021253
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {}
+  },
+  {
+    "step": 3000,
+    "time": 20980.784561395645,
+    "text_loss": 1.138946533203125,
+    "audio_loss": 1.650390625,
+    "cb_losses_train": {
+      "cb0": 2.083984375,
+      "cb1": 1.755859375,
+      "cb2": 2.0595703125,
+      "cb3": 1.697265625,
+      "cb4": 1.0869140625,
+      "cb5": 1.494140625,
+      "cb6": 1.3759765625
+    },
+    "lr": 2.0000197392015863e-06,
+    "grad_norm": 0.361125648021698,
+    "displacement": {
+      "total": 24.022168541769023,
+      "embedding": 0.0,
+      "backbone": 12.037276942611857,
+      "lm_head": 20.788663864135742,
+      "adapter": 0.0
+    },
+    "embedding_rank": {
+      "text_rank": 765.8654256119611,
+      "audio_rank": 644.4013847714091
+    },
+    "rho": 0,
+    "cos_phi": 0,
+    "layer_cos": {},
+    "text_grad_norm": 0,
+    "audio_grad_norm": 0,
+    "cb_losses": {},
+    "basin": {
+      "baseline_loss": 0.79140625,
+      "perturbations": {
+        "0.01": {
+          "mean_loss": 3.4368749999999997,
+          "max_loss": 5.01875,
+          "degradation": 2.6454687499999996
+        },
+        "0.05": {
+          "mean_loss": 29.32,
+          "max_loss": 34.75,
+          "degradation": 28.52859375
+        },
+        "0.1": {
+          "mean_loss": 56.0,
+          "max_loss": 63.1,
+          "degradation": 55.20859375
+        },
+        "0.5": {
+          "mean_loss": 270.24,
+          "max_loss": 280.0,
+          "degradation": 269.44859375
+        },
+        "1.0": {
+          "mean_loss": 554.8,
+          "max_loss": 567.2,
+          "degradation": 554.0085937499999
+        }
+      }
+    }
+  }
+]
