@@ -25,7 +25,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 
-sys.path.insert(0, "/workspace/mini-omni-ref")
+sys.path.insert(0, os.environ.get("MINI_OMNI_REF", "/workspace/mini-omni-ref"))
 from litgpt.config import Config
 from litgpt.model import GPT
 
@@ -68,7 +68,7 @@ S3_CONFIG = {
 class OmniS3Dataset(Dataset):
     """Load preprocessed S3 data (from prepare_s3.py, with delay pattern)."""
 
-    def __init__(self, data_path, max_len=2048, s2_mode=False):
+    def __init__(self, data_path, max_len=2048, s2_mode=False, whisper_dir=None):
         self.data = torch.load(data_path, weights_only=False)
         self.max_len = max_len
         if s2_mode:
@@ -80,17 +80,40 @@ class OmniS3Dataset(Dataset):
         tasks = Counter(d['task'] for d in self.data)
         print(f"  Tasks: {dict(tasks)}")
 
+        # Load whisper features if available
+        self.whisper_features = {}  # (shard_idx, row_idx) -> features tensor
+        if whisper_dir and os.path.isdir(whisper_dir):
+            import glob as _glob
+            shard_files = sorted(_glob.glob(os.path.join(whisper_dir, "shard_*.pt")))
+            n_loaded = 0
+            for sf_path in shard_files:
+                shard_idx = int(os.path.basename(sf_path).split("_")[1].split(".")[0])
+                shard_data = torch.load(sf_path, weights_only=False)
+                for row_idx, entry in enumerate(shard_data):
+                    if entry is not None:
+                        self.whisper_features[(shard_idx, row_idx)] = entry['features']
+                        n_loaded += 1
+                del shard_data
+            print(f"  Loaded {n_loaded} whisper features from {whisper_dir}")
+        else:
+            print(f"  No whisper features loaded")
+
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
         d = self.data[idx]
-        return d['streams'], d['loss_mask_text'], d['loss_mask_audio'], d['task']
+        whisper_ref = d.get('whisper_ref', None)
+        whisper_feat = None
+        whisper_len = d.get('whisper_len', 0)
+        if whisper_ref is not None:
+            whisper_feat = self.whisper_features.get(tuple(whisper_ref), None)
+        return d['streams'], d['loss_mask_text'], d['loss_mask_audio'], d['task'], whisper_feat, whisper_len
 
 
 def collate_fn(batch):
-    """Pad sequences to same length within batch."""
-    streams_list, lm_text_list, lm_audio_list, tasks = zip(*batch)
+    """Pad sequences to same length within batch. Handles optional whisper features."""
+    streams_list, lm_text_list, lm_audio_list, tasks, whisper_feats, whisper_len_list = zip(*batch)
 
     max_len = max(s.shape[1] for s in streams_list)
     B = len(batch)
@@ -105,13 +128,32 @@ def collate_fn(batch):
         lm_text[i, :L] = lt
         lm_audio[i, :L] = la
 
-    return streams, lm_text, lm_audio, tasks
+    # Pad whisper features: None means no audio input for this sample
+    has_any_whisper = any(wf is not None for wf in whisper_feats)
+    if has_any_whisper:
+        # Determine feature dim from first non-None feature
+        feat_dim = next(wf.shape[-1] for wf in whisper_feats if wf is not None)
+        max_wlen = max(wf.shape[0] for wf in whisper_feats if wf is not None)
+        audio_features = torch.zeros(B, max_wlen, feat_dim, dtype=torch.float16)
+        # Use actual whisper lengths from tokenization (NOT tensor shape which is always 1500)
+        whisper_lens = torch.zeros(B, dtype=torch.long)
+        for i, (wf, wl) in enumerate(zip(whisper_feats, whisper_len_list)):
+            if wf is not None:
+                wlen = wf.shape[0]
+                audio_features[i, :wlen] = wf
+                whisper_lens[i] = wl  # actual audio length, not padded tensor length
+    else:
+        audio_features = None
+        whisper_lens = None
+
+    return streams, lm_text, lm_audio, tasks, audio_features, whisper_lens
 
 
 # ============================================================================
 # Loss computation — matches mini-omni exactly
 # ============================================================================
-def compute_losses(model, streams, loss_mask_text, loss_mask_audio):
+def compute_losses(model, streams, loss_mask_text, loss_mask_audio,
+                    audio_features=None, whisper_lens=None, tasks=None):
     """Compute separate text CE and per-codebook audio CE.
 
     Mini-omni approach (from GitHub issues #101, #135):
@@ -121,8 +163,12 @@ def compute_losses(model, streams, loss_mask_text, loss_mask_audio):
     """
     input_ids = [streams[:, i, :] for i in range(8)]
 
+    # Build task list for concat_whisper_feat (needed to skip T1/T1A2 samples)
+    task_list = list(tasks) if tasks is not None else None
+
     with torch.amp.autocast('cuda', dtype=DTYPE):
-        xa, xt = model(audio_features=None, input_ids=input_ids)
+        xa, xt = model(audio_features=audio_features, input_ids=input_ids,
+                       whisper_lens=whisper_lens, task=task_list)
 
     # Text loss — CE on text head, masked to answer positions
     text_targets = input_ids[7][:, 1:]   # (B, T-1) shifted
@@ -161,11 +207,14 @@ def compute_losses(model, streams, loss_mask_text, loss_mask_audio):
     return text_loss, audio_losses
 
 
-def forward_text_loss(model, streams, loss_mask_text):
+def forward_text_loss(model, streams, loss_mask_text, audio_features=None,
+                      whisper_lens=None, tasks=None):
     """Text-only loss for basin probing."""
     input_ids = [streams[:, i, :] for i in range(8)]
+    task_list = list(tasks) if tasks is not None else None
     with torch.amp.autocast('cuda', dtype=DTYPE):
-        xa, xt = model(audio_features=None, input_ids=input_ids)
+        xa, xt = model(audio_features=audio_features, input_ids=input_ids,
+                       whisper_lens=whisper_lens, task=task_list)
     targets = input_ids[7][:, 1:]
     logits = xt[:, :-1]
     mask = loss_mask_text[:, 1:]
@@ -202,13 +251,16 @@ class DiagnosticTracker:
         model.eval()
 
         # Find a batch with both text and audio masks active
-        diag_streams = diag_lt = diag_la = None
-        for s, lt, la, tasks_d in val_loader:
+        diag_streams = diag_lt = diag_la = diag_af = diag_wl = diag_tasks = None
+        for s, lt, la, tasks_d, af, wl in val_loader:
             if lt.any() and la.any():
                 max_t = min(s.shape[2], 512)
                 diag_streams = s[:, :, :max_t].to(DEVICE)
                 diag_lt = lt[:, :max_t].to(DEVICE)
                 diag_la = la[:, :max_t].to(DEVICE)
+                diag_af = af.to(DEVICE) if af is not None else None
+                diag_wl = wl.to(DEVICE) if wl is not None else None
+                diag_tasks = tasks_d
                 break
         if diag_streams is None:
             return {"rho": 0, "cos_phi": 0, "layer_cos": {},
@@ -216,7 +268,8 @@ class DiagnosticTracker:
 
         # Pass 1: text loss backward
         model.zero_grad()
-        text_loss, audio_losses = compute_losses(model, diag_streams, diag_lt, diag_la)
+        text_loss, audio_losses = compute_losses(model, diag_streams, diag_lt, diag_la,
+                                                  diag_af, diag_wl, diag_tasks)
         if text_loss.item() > 0:
             text_loss.backward()
         text_grads = {}
@@ -229,8 +282,9 @@ class DiagnosticTracker:
 
         # Pass 2: audio loss backward
         model.zero_grad()
-        _, audio_losses2 = compute_losses(model, diag_streams, diag_lt, diag_la)
-        audio_loss_total = sum(audio_losses2) / max(len(audio_losses2), 1)
+        _, audio_losses2 = compute_losses(model, diag_streams, diag_lt, diag_la,
+                                           diag_af, diag_wl, diag_tasks)
+        audio_loss_total = sum(audio_losses2)
         if audio_loss_total.item() > 0:
             audio_loss_total.backward()
         audio_grads = {}
@@ -264,6 +318,29 @@ class DiagnosticTracker:
             if t_norm2 > 0 and a_norm2 > 0:
                 layer_cos[layer_idx] = dot / (t_norm2**0.5 * a_norm2**0.5 + 1e-10)
 
+        # D11: per-module gradient norms
+        module_grad_norms = {"text": {}, "audio": {}}
+        for modality, grads in [("text", text_grads), ("audio", audio_grads)]:
+            emb_norm2 = adapter_norm2 = lm_head_norm2 = 0.0
+            layer_norms2 = defaultdict(float)
+            for name, g in grads.items():
+                gnorm2 = g.norm().item() ** 2
+                if "wte" in name:
+                    emb_norm2 += gnorm2
+                elif "whisper_adapter" in name:
+                    adapter_norm2 += gnorm2
+                elif "lm_head" in name:
+                    lm_head_norm2 += gnorm2
+                else:
+                    for li in range(24):
+                        if f"transformer.h.{li}." in name:
+                            layer_norms2[f"layer{li}"] += gnorm2
+                            break
+            module_grad_norms[modality]["emb"] = emb_norm2 ** 0.5
+            module_grad_norms[modality]["adapter"] = adapter_norm2 ** 0.5
+            module_grad_norms[modality]["lm_head"] = lm_head_norm2 ** 0.5
+            module_grad_norms[modality].update({k: v ** 0.5 for k, v in layer_norms2.items()})
+
         # D7: per-codebook losses
         cb_losses = {f"cb{i}": al.item() for i, al in enumerate(audio_losses2)}
 
@@ -278,6 +355,7 @@ class DiagnosticTracker:
             "text_grad_norm": text_grad_norm,
             "audio_grad_norm": audio_grad_norm,
             "cb_losses": cb_losses,
+            "module_grad_norms": module_grad_norms,
         }
 
     def compute_displacement(self, model):
@@ -336,6 +414,324 @@ class DiagnosticTracker:
             "audio_rank": effective_rank(audio_emb),
         }
 
+    def compute_topk_and_histogram(self, model, val_loader, max_batches=20):
+        """D8: top-k accuracy and loss histogram for text and audio.
+
+        Measures:
+        - Top-1/5/10 accuracy for text and each audio codebook
+        - Normalized loss = actual_loss / H_random (where H_random = ln(vocab_size))
+        - Per-sample loss histogram (binned)
+        """
+        import math as _math
+        model.eval()
+        H_random_text = _math.log(TEXT_VOCAB_SIZE)   # ln(152000) = 11.93
+        H_random_audio = _math.log(AUDIO_VOCAB_SIZE)  # ln(4160) = 8.33
+
+        # Accumulators
+        text_correct = {1: 0, 5: 0, 10: 0}
+        text_total = 0
+        text_losses_all = []
+
+        cb_correct = {i: {1: 0, 5: 0, 10: 0} for i in range(7)}
+        cb_total = {i: 0 for i in range(7)}
+        cb_losses_all = {i: [] for i in range(7)}
+
+        n_batches = 0
+        with torch.no_grad():
+            for streams, lm_text, lm_audio, tasks, af, wl in val_loader:
+                if n_batches >= max_batches:
+                    break
+                n_batches += 1
+                streams = streams.to(DEVICE)
+                lm_text = lm_text.to(DEVICE)
+                lm_audio = lm_audio.to(DEVICE)
+                af_dev = af.to(DEVICE) if af is not None else None
+                wl_dev = wl.to(DEVICE) if wl is not None else None
+
+                input_ids = [streams[:, i, :] for i in range(8)]
+                task_list = list(tasks) if tasks is not None else None
+                with torch.amp.autocast('cuda', dtype=DTYPE):
+                    xa, xt = model(audio_features=af_dev, input_ids=input_ids,
+                                   whisper_lens=wl_dev, task=task_list)
+
+                # Text top-k
+                text_targets = input_ids[7][:, 1:]
+                text_logits = xt[:, :-1]
+                text_mask = lm_text[:, 1:]
+                if text_mask.any():
+                    tgt = text_targets[text_mask].view(-1)
+                    logit = text_logits[text_mask].view(-1, text_logits.shape[-1]).float()
+                    text_total += tgt.numel()
+                    for k in [1, 5, 10]:
+                        topk_ids = logit.topk(k, dim=-1).indices
+                        text_correct[k] += (topk_ids == tgt.unsqueeze(-1)).any(-1).sum().item()
+                    # Per-token losses
+                    per_token_loss = F.cross_entropy(logit, tgt, reduction='none')
+                    text_losses_all.extend(per_token_loss.cpu().tolist())
+
+                # Audio top-k per codebook
+                audio_mask = lm_audio[:, 1:]
+                if audio_mask.any():
+                    for i in range(7):
+                        audio_targets_raw = input_ids[i][:, 1:]
+                        audio_logits = xa[i][:, :-1]
+                        tgt = (audio_targets_raw[audio_mask] - TEXT_VOCAB_SIZE - i * AUDIO_VOCAB_SIZE).clamp(0, AUDIO_VOCAB_SIZE - 1).view(-1)
+                        logit = audio_logits[audio_mask].view(-1, audio_logits.shape[-1]).float()
+                        cb_total[i] += tgt.numel()
+                        for k in [1, 5, 10]:
+                            topk_ids = logit.topk(k, dim=-1).indices
+                            cb_correct[i][k] += (topk_ids == tgt.unsqueeze(-1)).any(-1).sum().item()
+                        per_token_loss = F.cross_entropy(logit, tgt, reduction='none')
+                        cb_losses_all[i].extend(per_token_loss.cpu().tolist())
+
+        # Compute accuracies
+        text_acc = {f"top{k}": text_correct[k] / max(text_total, 1) for k in [1, 5, 10]}
+        cb_acc = {}
+        for i in range(7):
+            for k in [1, 5, 10]:
+                cb_acc[f"cb{i}_top{k}"] = cb_correct[i][k] / max(cb_total[i], 1)
+
+        # Normalized losses (actual / H_random)
+        text_mean_loss = sum(text_losses_all) / max(len(text_losses_all), 1)
+        cb_mean_losses = {}
+        for i in range(7):
+            cb_mean_losses[f"cb{i}"] = sum(cb_losses_all[i]) / max(len(cb_losses_all[i]), 1)
+
+        # Loss histogram (10 bins from 0 to H_random)
+        import numpy as np
+        text_hist = {}
+        if text_losses_all:
+            counts, edges = np.histogram(text_losses_all, bins=10, range=(0, H_random_text))
+            text_hist = {f"bin{j}": int(counts[j]) for j in range(10)}
+        cb_hist = {}
+        for i in range(7):
+            if cb_losses_all[i]:
+                counts, edges = np.histogram(cb_losses_all[i], bins=10, range=(0, H_random_audio))
+                cb_hist[f"cb{i}"] = {f"bin{j}": int(counts[j]) for j in range(10)}
+
+        model.train()
+        return {
+            "text_topk": text_acc,
+            "text_mean_loss": text_mean_loss,
+            "text_normalized_loss": text_mean_loss / H_random_text,
+            "audio_topk": cb_acc,
+            "audio_mean_losses": cb_mean_losses,
+            "audio_normalized_losses": {k: v / H_random_audio for k, v in cb_mean_losses.items()},
+            "text_loss_hist": text_hist,
+            "audio_loss_hist": cb_hist,
+            "n_text_tokens": text_total,
+            "n_audio_tokens": cb_total[0],
+        }
+
+    def compute_linear_probe(self, model, val_loader, probe_layers=(6, 12, 18),
+                              n_train_batches=15, n_val_batches=5, probe_steps=200, lr=1e-3):
+        """D9: linear probe on backbone hidden states to predict audio tokens.
+
+        Tests whether backbone intermediate layers contain useful audio info
+        even when output loss has plateaued.
+        """
+        model.eval()
+
+        # Hook to capture hidden states at specific layers
+        hidden_captures = {}
+        hooks = []
+
+        def make_hook(layer_idx):
+            def hook_fn(module, input, output):
+                hidden_captures[layer_idx] = output.detach()
+            return hook_fn
+
+        for li in probe_layers:
+            h = model.transformer.h[li].register_forward_hook(make_hook(li))
+            hooks.append(h)
+
+        # Collect data: run forward, grab hidden states + targets
+        train_data = {li: {"hidden": [], "targets": []} for li in probe_layers}
+        val_data = {li: {"hidden": [], "targets": []} for li in probe_layers}
+
+        batch_count = 0
+        with torch.no_grad():
+            for streams, lm_text, lm_audio, tasks, af, wl in val_loader:
+                batch_count += 1
+                if batch_count > n_train_batches + n_val_batches:
+                    break
+                streams = streams.to(DEVICE)
+                lm_audio = lm_audio.to(DEVICE)
+                af_dev = af.to(DEVICE) if af is not None else None
+                wl_dev = wl.to(DEVICE) if wl is not None else None
+
+                input_ids = [streams[:, i, :] for i in range(8)]
+                task_list = list(tasks) if tasks is not None else None
+                with torch.amp.autocast('cuda', dtype=DTYPE):
+                    model(audio_features=af_dev, input_ids=input_ids,
+                          whisper_lens=wl_dev, task=task_list)
+
+                audio_mask = lm_audio[:, 1:]
+                if not audio_mask.any():
+                    continue
+
+                # Target: cb0 token (semantic codebook)
+                cb0_targets = (input_ids[0][:, 1:][audio_mask] - TEXT_VOCAB_SIZE).clamp(0, AUDIO_VOCAB_SIZE - 1)
+
+                dest = train_data if batch_count <= n_train_batches else val_data
+                for li in probe_layers:
+                    h = hidden_captures[li][:, :-1][audio_mask].float()  # (N, 896)
+                    dest[li]["hidden"].append(h.cpu())
+                    dest[li]["targets"].append(cb0_targets.cpu())
+
+        # Remove hooks
+        for h in hooks:
+            h.remove()
+
+        # Train a linear probe per layer
+        results = {}
+        for li in probe_layers:
+            if not train_data[li]["hidden"] or not val_data[li]["hidden"]:
+                results[f"layer{li}"] = {"train_acc": 0, "val_acc": 0, "val_loss": 0}
+                continue
+
+            X_train = torch.cat(train_data[li]["hidden"])
+            y_train = torch.cat(train_data[li]["targets"])
+            X_val = torch.cat(val_data[li]["hidden"])
+            y_val = torch.cat(val_data[li]["targets"])
+
+            # Simple linear probe
+            probe = torch.nn.Linear(X_train.shape[1], AUDIO_VOCAB_SIZE).to(DEVICE)
+            opt = torch.optim.Adam(probe.parameters(), lr=lr)
+
+            # Train
+            probe.train()
+            n = X_train.shape[0]
+            for s in range(probe_steps):
+                idx = torch.randint(0, n, (min(256, n),))
+                logits = probe(X_train[idx].to(DEVICE))
+                loss = F.cross_entropy(logits, y_train[idx].to(DEVICE))
+                opt.zero_grad()
+                loss.backward()
+                opt.step()
+
+            # Eval
+            probe.eval()
+            with torch.no_grad():
+                # Train accuracy
+                train_logits = probe(X_train[:2048].to(DEVICE))
+                train_acc = (train_logits.argmax(-1) == y_train[:2048].to(DEVICE)).float().mean().item()
+                # Val accuracy + loss
+                val_logits = probe(X_val.to(DEVICE))
+                val_acc = (val_logits.argmax(-1) == y_val.to(DEVICE)).float().mean().item()
+                val_loss = F.cross_entropy(val_logits, y_val.to(DEVICE)).item()
+
+            results[f"layer{li}"] = {
+                "train_acc": round(train_acc, 4),
+                "val_acc": round(val_acc, 4),
+                "val_loss": round(val_loss, 4),
+                "n_train": n,
+                "n_val": X_val.shape[0],
+            }
+            del probe, X_train, y_train, X_val, y_val
+
+        model.train()
+        torch.cuda.empty_cache()
+        return results
+
+    def compute_cka(self, model, val_loader, probe_layers=(6, 12, 18)):
+        """D12: CKA (Centered Kernel Alignment) between current and step-0 hidden states."""
+        model.eval()
+
+        # Hook to capture hidden states
+        hidden_captures = {}
+        hooks = []
+
+        def make_hook(layer_idx):
+            def hook_fn(module, input, output):
+                hidden_captures[layer_idx] = output.detach()
+            return hook_fn
+
+        for li in probe_layers:
+            h = model.transformer.h[li].register_forward_hook(make_hook(li))
+            hooks.append(h)
+
+        # Get one val batch
+        batch = None
+        for streams, lm_text, lm_audio, tasks, af, wl in val_loader:
+            batch = (streams, lm_text, lm_audio, tasks, af, wl)
+            break
+
+        if batch is None:
+            for h in hooks:
+                h.remove()
+            model.train()
+            return {}
+
+        streams, lm_text, lm_audio, tasks, af, wl = batch
+        streams = streams.to(DEVICE)
+        af_dev = af.to(DEVICE) if af is not None else None
+        wl_dev = wl.to(DEVICE) if wl is not None else None
+
+        with torch.no_grad():
+            input_ids = [streams[:, i, :] for i in range(8)]
+            task_list = list(tasks) if tasks is not None else None
+            with torch.amp.autocast('cuda', dtype=DTYPE):
+                model(audio_features=af_dev, input_ids=input_ids,
+                      whisper_lens=wl_dev, task=task_list)
+
+        current_hidden = {li: hidden_captures[li].float().cpu() for li in probe_layers}
+
+        # Save step-0 hidden states on first call
+        if not hasattr(self, '_cka_hidden_0'):
+            self._cka_hidden_0 = {li: h.clone() for li, h in current_hidden.items()}
+            for h in hooks:
+                h.remove()
+            model.train()
+            return {f"layer{li}": 1.0 for li in probe_layers}  # CKA with self = 1.0
+
+        # Linear CKA: ||Y^T X||_F^2 / (||X^T X||_F * ||Y^T Y||_F)
+        results = {}
+        for li in probe_layers:
+            X = self._cka_hidden_0[li].reshape(-1, self._cka_hidden_0[li].shape[-1])  # (N, D)
+            Y = current_hidden[li].reshape(-1, current_hidden[li].shape[-1])
+            # Center
+            X = X - X.mean(0)
+            Y = Y - Y.mean(0)
+            YtX = Y.T @ X
+            XtX = X.T @ X
+            YtY = Y.T @ Y
+            cka = (YtX.norm() ** 2) / (XtX.norm() * YtY.norm() + 1e-10)
+            results[f"layer{li}"] = round(cka.item(), 6)
+
+        for h in hooks:
+            h.remove()
+        model.train()
+        return results
+
+    def compute_embedding_collapse(self, model, n_sample=1000):
+        """D13: mean pairwise cosine similarity of audio token embeddings.
+        Values near 1.0 indicate embedding collapse.
+        """
+        wte = model.transformer.wte.weight.data
+        audio_emb = wte[TEXT_VOCAB_SIZE:]  # all audio embeddings
+
+        n_audio = audio_emb.shape[0]
+        if n_audio < 2:
+            return 0.0
+
+        # Sample n_sample random audio embeddings
+        n_sample = min(n_sample, n_audio)
+        idx = torch.randperm(n_audio)[:n_sample]
+        sampled = audio_emb[idx].float()  # (n_sample, D)
+
+        # Normalize
+        sampled = F.normalize(sampled, dim=1)
+
+        # Pairwise cosine similarity = sampled @ sampled.T
+        cos_sim = sampled @ sampled.T  # (n_sample, n_sample)
+
+        # Mean of upper triangle (excluding diagonal)
+        mask = torch.triu(torch.ones(n_sample, n_sample, dtype=torch.bool), diagonal=1)
+        mean_cos = cos_sim[mask].mean().item()
+
+        return round(mean_cos, 6)
+
     def probe_basin_width(self, model, val_loader, n_directions=10,
                            epsilons=[0.01, 0.05, 0.1, 0.5, 1.0]):
         """D4: basin width probing (expensive)."""
@@ -345,12 +741,14 @@ class DiagnosticTracker:
         baseline_loss = 0.0
         n_batches = 0
         with torch.no_grad():
-            for streams, lm_text, lm_audio, tasks in val_loader:
+            for streams, lm_text, lm_audio, tasks, af, wl in val_loader:
                 if n_batches >= 5:
                     break
                 streams = streams.to(DEVICE)
                 lm_text = lm_text.to(DEVICE)
-                loss = forward_text_loss(model, streams, lm_text)
+                af_dev = af.to(DEVICE) if af is not None else None
+                wl_dev = wl.to(DEVICE) if wl is not None else None
+                loss = forward_text_loss(model, streams, lm_text, af_dev, wl_dev, tasks)
                 baseline_loss += loss.item()
                 n_batches += 1
         baseline_loss /= max(n_batches, 1)
@@ -369,12 +767,14 @@ class DiagnosticTracker:
                 with torch.no_grad():
                     perturbed_loss = 0.0
                     n_b = 0
-                    for streams, lm_text, lm_audio, tasks in val_loader:
+                    for streams, lm_text, lm_audio, tasks, af, wl in val_loader:
                         if n_b >= 5:
                             break
                         streams = streams.to(DEVICE)
                         lm_text = lm_text.to(DEVICE)
-                        loss = forward_text_loss(model, streams, lm_text)
+                        af_dev = af.to(DEVICE) if af is not None else None
+                        wl_dev = wl.to(DEVICE) if wl is not None else None
+                        loss = forward_text_loss(model, streams, lm_text, af_dev, wl_dev, tasks)
                         perturbed_loss += loss.item()
                         n_b += 1
                     perturbed_loss /= max(n_b, 1)
@@ -397,7 +797,7 @@ class DiagnosticTracker:
 # ============================================================================
 # Model loading
 # ============================================================================
-def load_mini_omni_checkpoint(ckpt_dir="/workspace/mini-omni-ckpt"):
+def load_mini_omni_checkpoint(ckpt_dir=os.environ.get("MINI_OMNI_CKPT", "/workspace/mini-omni-ckpt")):
     """Load mini-omni checkpoint with their exact config."""
     config = Config.from_file(f"{ckpt_dir}/model_config.yaml")
     print(f"Config: post_adapter={config.post_adapter}, "
@@ -420,7 +820,7 @@ def load_mini_omni_checkpoint(ckpt_dir="/workspace/mini-omni-ckpt"):
     return model
 
 
-def build_post_s1_checkpoint(ckpt_dir="/workspace/mini-omni-ckpt"):
+def build_post_s1_checkpoint(ckpt_dir=os.environ.get("MINI_OMNI_CKPT", "/workspace/mini-omni-ckpt")):
     """Build a post-S1 checkpoint: Qwen2-0.5B + trained whisper_adapter + fresh audio embeddings.
 
     Simulates the state after S1 (adapter training) but before S2 (text adaptation).
@@ -564,8 +964,17 @@ def train(config=None, output_dir="results/s3_adam"):
         weight_decay=config["weight_decay"],
     )
 
-    # ---- Adjust batch for memory-hungry methods ----
+    # ---- GradNorm setup ----
     method = config.get("method", "baseline")
+    if method == "gradnorm":
+        w_text = nn.Parameter(torch.ones(1, device=DEVICE))
+        w_audio_gn = nn.Parameter(torch.ones(1, device=DEVICE))
+        gradnorm_opt = torch.optim.Adam([w_text, w_audio_gn], lr=0.025)
+        gradnorm_L_text_0 = None
+        gradnorm_L_audio_0 = None
+        print(f"  [gradnorm] alpha={config.get('gradnorm_alpha', 1.5)}, weight_lr=0.025")
+
+    # ---- Adjust batch for memory-hungry methods ----
     if method in ("grad_proj", "m_sam"):
         # 2 forward passes → need smaller batch
         config["batch_size"] = 1
@@ -573,9 +982,14 @@ def train(config=None, output_dir="results/s3_adam"):
         print(f"  [{method}] batch_size=1, grad_accum=32 (2x forward passes)")
 
     # ---- Data ----
-    data_dir = "/root/.cache/autoresearch/s3_data"
-    train_dataset = OmniS3Dataset(f"{data_dir}/train.pt", s2_mode=s2_mode)
-    val_dataset = OmniS3Dataset(f"{data_dir}/val.pt")  # val always full (all 4 task types)
+    data_dir = os.environ.get("S3_DATA_DIR", "/root/.cache/autoresearch/s3_data")
+    whisper_dir = os.path.join(data_dir, "whisper_features")
+    if not os.path.isdir(whisper_dir):
+        whisper_dir = None
+    train_dataset = OmniS3Dataset(f"{data_dir}/train.pt", s2_mode=s2_mode,
+                                   whisper_dir=whisper_dir)
+    val_dataset = OmniS3Dataset(f"{data_dir}/val.pt",
+                                 whisper_dir=whisper_dir)  # val always full (all 4 task types)
 
     train_loader = DataLoader(
         train_dataset, batch_size=config["batch_size"],
@@ -610,19 +1024,21 @@ def train(config=None, output_dir="results/s3_adam"):
     while step < config["max_steps"]:
         # Get batch
         try:
-            streams, lm_text, lm_audio, tasks = next(train_iter)
+            streams, lm_text, lm_audio, tasks, audio_features, whisper_lens = next(train_iter)
         except StopIteration:
             train_iter = iter(train_loader)
-            streams, lm_text, lm_audio, tasks = next(train_iter)
+            streams, lm_text, lm_audio, tasks, audio_features, whisper_lens = next(train_iter)
 
         streams = streams.to(DEVICE)
         lm_text = lm_text.to(DEVICE)
         lm_audio = lm_audio.to(DEVICE)
+        if audio_features is not None:
+            audio_features = audio_features.to(DEVICE)
+            whisper_lens = whisper_lens.to(DEVICE)
 
         # ---- Method: gradient projection ----
         method = config.get("method", "baseline")
         cb_w = config.get("cb_weights", [1]*7)
-        cb_w_sum = sum(cb_w)
 
         if method == "grad_proj":
             # Two separate forward+backward passes (no retain_graph, saves memory)
@@ -630,7 +1046,8 @@ def train(config=None, output_dir="results/s3_adam"):
 
             # Pass 1: text loss forward+backward
             model.zero_grad()
-            text_loss_1, _ = compute_losses(model, streams, lm_text, lm_audio)
+            text_loss_1, _ = compute_losses(model, streams, lm_text, lm_audio,
+                                            audio_features, whisper_lens, tasks)
             (text_loss_1 / config["grad_accum"]).backward()
             text_grads = {}
             for name, p in model.named_parameters():
@@ -639,8 +1056,9 @@ def train(config=None, output_dir="results/s3_adam"):
 
             # Pass 2: audio loss forward+backward
             model.zero_grad()
-            text_loss, audio_losses = compute_losses(model, streams, lm_text, lm_audio)
-            audio_loss = sum(cb_w[i] * audio_losses[i] for i in range(7)) / cb_w_sum
+            text_loss, audio_losses = compute_losses(model, streams, lm_text, lm_audio,
+                                                     audio_features, whisper_lens, tasks)
+            audio_loss = sum(cb_w[i] * audio_losses[i] for i in range(7))
             scaled_audio = (audio_weight * audio_loss) / config["grad_accum"]
             scaled_audio.backward()
 
@@ -685,8 +1103,9 @@ def train(config=None, output_dir="results/s3_adam"):
 
             # Step 1: normal forward-backward to get text gradient direction
             model.zero_grad()
-            text_loss, audio_losses = compute_losses(model, streams, lm_text, lm_audio)
-            audio_loss = sum(cb_w[i] * audio_losses[i] for i in range(7)) / cb_w_sum
+            text_loss, audio_losses = compute_losses(model, streams, lm_text, lm_audio,
+                                                     audio_features, whisper_lens, tasks)
+            audio_loss = sum(cb_w[i] * audio_losses[i] for i in range(7))
             total_loss = text_loss + audio_weight * audio_loss
             (total_loss / config["grad_accum"]).backward()
 
@@ -707,8 +1126,9 @@ def train(config=None, output_dir="results/s3_adam"):
 
             # Step 3: forward-backward at perturbed point
             model.zero_grad()
-            text_loss2, audio_losses2 = compute_losses(model, streams, lm_text, lm_audio)
-            audio_loss2 = sum(cb_w[i] * audio_losses2[i] for i in range(7)) / cb_w_sum
+            text_loss2, audio_losses2 = compute_losses(model, streams, lm_text, lm_audio,
+                                                       audio_features, whisper_lens, tasks)
+            audio_loss2 = sum(cb_w[i] * audio_losses2[i] for i in range(7))
             total_loss2 = text_loss2 + audio_weight * audio_loss2
             (total_loss2 / config["grad_accum"]).backward()
 
@@ -726,16 +1146,27 @@ def train(config=None, output_dir="results/s3_adam"):
             accum_steps += 1
 
         else:
-            # Standard forward-backward (baseline, adaptive_lambda)
-            text_loss, audio_losses = compute_losses(model, streams, lm_text, lm_audio)
-            audio_loss = sum(cb_w[i] * audio_losses[i] for i in range(7)) / cb_w_sum
+            # Standard forward-backward (baseline, adaptive_lambda, gradnorm, entropy_scaled)
+            text_loss, audio_losses = compute_losses(model, streams, lm_text, lm_audio,
+                                                     audio_features, whisper_lens, tasks)
 
-            # Adaptive λ: adjust based on ρ
-            audio_weight = config.get("audio_weight", 1.0)
-            if method == "adaptive_lambda":
+            # Entropy-scaled: divide each cb loss by its empirical entropy
+            if method == "entropy_scaled":
+                cb_entropy = config.get("cb_entropy", [1.0]*7)
+                audio_loss = sum(cb_w[i] * audio_losses[i] / cb_entropy[i] for i in range(7))
+            else:
+                audio_loss = sum(cb_w[i] * audio_losses[i] for i in range(7))
+
+            # Task weighting
+            if method == "gradnorm":
+                audio_weight = w_audio_gn.item()
+                total_loss = w_text.item() * text_loss + audio_weight * audio_loss
+            elif method == "adaptive_lambda":
                 audio_weight = config.get("_current_lambda", config.get("audio_weight", 1.0))
-
-            total_loss = text_loss + audio_weight * audio_loss
+                total_loss = text_loss + audio_weight * audio_loss
+            else:
+                audio_weight = config.get("audio_weight", 1.0)
+                total_loss = text_loss + audio_weight * audio_loss
 
             # Backward with gradient accumulation
             scaled_loss = total_loss / config["grad_accum"]
@@ -779,14 +1210,75 @@ def train(config=None, output_dir="results/s3_adam"):
             accum_cb_losses = [0.0] * 7
             accum_steps = 0
 
+            # GradNorm weight update
+            if method == "gradnorm":
+                alpha_gn = config.get("gradnorm_alpha", 1.5)
+
+                # Record initial losses at step 1
+                if step == 1:
+                    gradnorm_L_text_0 = avg_text
+                    gradnorm_L_audio_0 = avg_audio
+                    print(f"  [gradnorm] L_text_0={gradnorm_L_text_0:.4f}, L_audio_0={gradnorm_L_audio_0:.4f}")
+
+                if gradnorm_L_text_0 is not None and gradnorm_L_text_0 > 0 and gradnorm_L_audio_0 > 0:
+                    ln_f_w = model.transformer.ln_f.weight
+
+                    # Text gradient norm w.r.t. ln_f.weight
+                    model.zero_grad()
+                    tl_gn, _ = compute_losses(model, streams, lm_text, lm_audio,
+                                              audio_features, whisper_lens, tasks)
+                    tl_gn.backward()
+                    g_text_norm = ln_f_w.grad.norm().item() if ln_f_w.grad is not None else 1e-10
+
+                    # Audio gradient norm w.r.t. ln_f.weight
+                    model.zero_grad()
+                    _, al_gn = compute_losses(model, streams, lm_text, lm_audio,
+                                              audio_features, whisper_lens, tasks)
+                    al_gn_total = sum(al_gn)
+                    al_gn_total.backward()
+                    g_audio_norm = ln_f_w.grad.norm().item() if ln_f_w.grad is not None else 1e-10
+                    model.zero_grad()
+
+                    # Differentiable GradNorm loss
+                    G_text = w_text * g_text_norm
+                    G_audio = w_audio_gn * g_audio_norm
+                    G_bar = (G_text + G_audio) / 2
+
+                    r_text = avg_text / gradnorm_L_text_0
+                    r_audio = avg_audio / gradnorm_L_audio_0
+                    r_bar = (r_text + r_audio) / 2 + 1e-10
+                    r_tilde_text = r_text / r_bar
+                    r_tilde_audio = r_audio / r_bar
+
+                    target_text = G_bar.detach() * (r_tilde_text ** alpha_gn)
+                    target_audio = G_bar.detach() * (r_tilde_audio ** alpha_gn)
+
+                    L_grad = torch.abs(G_text - target_text) + torch.abs(G_audio - target_audio)
+
+                    gradnorm_opt.zero_grad()
+                    L_grad.backward()
+                    gradnorm_opt.step()
+
+                    # Renormalize to sum to 2
+                    with torch.no_grad():
+                        wsum = w_text.item() + w_audio_gn.item()
+                        w_text.mul_(2.0 / wsum)
+                        w_audio_gn.mul_(2.0 / wsum)
+
+                    model.train()
+                    optimizer.zero_grad()
+
             # Console logging
             if step % 10 == 0:
                 elapsed = time.time() - t0
                 cb_str = " ".join(f"{c:.2f}" for c in avg_cbs)
+                gn_suffix = ""
+                if method == "gradnorm":
+                    gn_suffix = f" w=[{w_text.item():.3f},{w_audio_gn.item():.3f}]"
                 print(f"  step {step}/{config['max_steps']} | "
                       f"text={avg_text:.4f} audio={avg_audio:.4f} | "
                       f"CB=[{cb_str}] | "
-                      f"lr={lr:.2e} gnorm={grad_norm:.2f} | {elapsed:.0f}s")
+                      f"lr={lr:.2e} gnorm={grad_norm:.2f}{gn_suffix} | {elapsed:.0f}s")
 
             # ---- Diagnostics ----
             if step % config["diag_every"] == 0:
@@ -808,6 +1300,14 @@ def train(config=None, output_dir="results/s3_adam"):
                 # D6: embedding rank
                 diag["embedding_rank"] = tracker.compute_embedding_rank(model)
 
+                # D13: audio embedding cosine collapse
+                diag["audio_emb_cos_collapse"] = tracker.compute_embedding_collapse(model)
+
+                # GradNorm weights
+                if method == "gradnorm":
+                    diag["gradnorm_w_text"] = w_text.item()
+                    diag["gradnorm_w_audio"] = w_audio_gn.item()
+
                 # D1, D2, D7: gradient-based
                 try:
                     grad_diag = tracker.compute_gradient_diagnostics(
@@ -815,6 +1315,47 @@ def train(config=None, output_dir="results/s3_adam"):
                     diag.update(grad_diag)
                 except Exception as e:
                     print(f"  [diag] Gradient diagnostics failed: {e}")
+
+                # D8: top-k accuracy, normalized loss, loss histogram
+                try:
+                    topk_diag = tracker.compute_topk_and_histogram(
+                        model, val_loader, max_batches=20)
+                    diag.update(topk_diag)
+                    print(f"  [diag] text top1={topk_diag['text_topk']['top1']:.3f} "
+                          f"top10={topk_diag['text_topk']['top10']:.3f} "
+                          f"norm_loss={topk_diag['text_normalized_loss']:.3f} | "
+                          f"cb0 top1={topk_diag['audio_topk'].get('cb0_top1', 0):.3f} "
+                          f"top10={topk_diag['audio_topk'].get('cb0_top10', 0):.3f} "
+                          f"norm_loss={topk_diag['audio_normalized_losses'].get('cb0', 0):.3f}")
+                except Exception as e:
+                    print(f"  [diag] Top-k diagnostics failed: {e}")
+
+                # D9: linear probe (every 500 steps — expensive)
+                if step % 500 == 0:
+                    try:
+                        probe_diag = tracker.compute_linear_probe(
+                            model, val_loader, probe_layers=(6, 12, 18))
+                        diag["linear_probe"] = probe_diag
+                        for li in (6, 12, 18):
+                            key = f"layer{li}"
+                            if key in probe_diag:
+                                p = probe_diag[key]
+                                print(f"  [probe] layer {li}: "
+                                      f"train_acc={p['train_acc']:.3f} "
+                                      f"val_acc={p['val_acc']:.3f} "
+                                      f"val_loss={p['val_loss']:.3f}")
+                    except Exception as e:
+                        print(f"  [diag] Linear probe failed: {e}")
+
+                    # D12: CKA (every 500 steps)
+                    try:
+                        cka_diag = tracker.compute_cka(model, val_loader)
+                        diag["cka"] = cka_diag
+                        cka_str = " ".join(f"L{k.replace('layer','')}={v:.3f}" for k, v in cka_diag.items())
+                        print(f"  [cka] {cka_str}")
+                    except Exception as e:
+                        print(f"  [diag] CKA failed: {e}")
+
                 model.train()
                 optimizer.zero_grad()
 
@@ -850,25 +1391,55 @@ def train(config=None, output_dir="results/s3_adam"):
                 val_text = val_audio = 0.0
                 val_cbs = [0.0] * 7
                 val_n = 0
+                # D10: per-task val loss
+                task_text_losses = defaultdict(float)
+                task_audio_losses = defaultdict(float)
+                task_counts = defaultdict(int)
                 with torch.no_grad():
-                    for sv, ltv, lav, _ in val_loader:
+                    for sv, ltv, lav, tv, afv, wlv in val_loader:
                         if val_n >= 50:
                             break
                         sv = sv.to(DEVICE)
                         ltv = ltv.to(DEVICE)
                         lav = lav.to(DEVICE)
-                        tl, als = compute_losses(model, sv, ltv, lav)
+                        afv_dev = afv.to(DEVICE) if afv is not None else None
+                        wlv_dev = wlv.to(DEVICE) if wlv is not None else None
+                        tl, als = compute_losses(model, sv, ltv, lav, afv_dev, wlv_dev, tv)
                         val_text += tl.item()
-                        val_audio += sum(a.item() for a in als) / 7
+                        val_audio += sum(a.item() for a in als)
                         for i in range(7):
                             val_cbs[i] += als[i].item()
                         val_n += 1
+                        # D10: accumulate per-task losses
+                        for task_name in tv:
+                            task_text_losses[task_name] += tl.item()
+                            task_audio_losses[task_name] += sum(a.item() for a in als)
+                            task_counts[task_name] += 1
                 val_text /= max(val_n, 1)
                 val_audio /= max(val_n, 1)
                 val_cbs = [c / max(val_n, 1) for c in val_cbs]
                 cb_str = " ".join(f"{c:.2f}" for c in val_cbs)
+                # D10: per-task averages
+                val_task_losses = {}
+                for tn in task_counts:
+                    n = task_counts[tn]
+                    val_task_losses[tn] = {
+                        "text": task_text_losses[tn] / n,
+                        "audio": task_audio_losses[tn] / n,
+                    }
+                task_str = " ".join(f"{tn}={val_task_losses[tn]['text']:.3f}/{val_task_losses[tn]['audio']:.3f}"
+                                    for tn in sorted(val_task_losses))
                 print(f"  [val] step {step}: text={val_text:.4f} "
                       f"audio={val_audio:.4f} CB=[{cb_str}]")
+                print(f"  [val] per-task (text/audio): {task_str}")
+                # Save to latest diag entry if one exists for this step
+                if diagnostics_log and diagnostics_log[-1].get("step") == step:
+                    diagnostics_log[-1]["val_task_losses"] = val_task_losses
+                    diagnostics_log[-1]["val_text"] = val_text
+                    diagnostics_log[-1]["val_audio"] = val_audio
+                    diagnostics_log[-1]["val_cbs"] = {f"cb{i}": val_cbs[i] for i in range(7)}
+                    with open(f"{output_dir}/diagnostics.json", "w") as f:
+                        json.dump(diagnostics_log, f, indent=2, default=str)
                 model.train()
 
             # ---- Checkpointing ----
@@ -889,15 +1460,17 @@ def train(config=None, output_dir="results/s3_adam"):
     val_text = val_audio = 0.0
     val_n = 0
     with torch.no_grad():
-        for sv, ltv, lav, _ in val_loader:
+        for sv, ltv, lav, tv, afv, wlv in val_loader:
             if val_n >= 100:
                 break
             sv = sv.to(DEVICE)
             ltv = ltv.to(DEVICE)
             lav = lav.to(DEVICE)
-            tl, als = compute_losses(model, sv, ltv, lav)
+            afv_dev = afv.to(DEVICE) if afv is not None else None
+            wlv_dev = wlv.to(DEVICE) if wlv is not None else None
+            tl, als = compute_losses(model, sv, ltv, lav, afv_dev, wlv_dev, tv)
             val_text += tl.item()
-            val_audio += sum(a.item() for a in als) / 7
+            val_audio += sum(a.item() for a in als)
             val_n += 1
     val_text /= max(val_n, 1)
     val_audio /= max(val_n, 1)
@@ -916,10 +1489,15 @@ if __name__ == "__main__":
     parser.add_argument("--warmup_steps", type=int, default=None)
     parser.add_argument("--weight_decay", type=float, default=None)
     parser.add_argument("--method", default="baseline",
-                        choices=["baseline", "grad_proj", "adaptive_lambda", "m_sam"],
+                        choices=["baseline", "grad_proj", "adaptive_lambda", "m_sam",
+                                 "gradnorm", "entropy_scaled"],
                         help="Training method variant")
     parser.add_argument("--adaptive_alpha", type=float, default=0.1,
                         help="Adaptive λ step size")
+    parser.add_argument("--gradnorm_alpha", type=float, default=1.5,
+                        help="GradNorm asymmetry parameter (higher = more aggressive rebalancing)")
+    parser.add_argument("--cb_entropy", type=str, default=None,
+                        help="Per-codebook entropy values, comma-separated 7 floats (for entropy_scaled)")
     parser.add_argument("--no_save_model", action="store_true",
                         help="Skip saving model checkpoints (save disk)")
     # Exp A: codebook weighting
@@ -942,7 +1520,11 @@ if __name__ == "__main__":
     config["audio_weight"] = args.audio_weight
     config["method"] = args.method
     config["adaptive_alpha"] = args.adaptive_alpha
+    config["gradnorm_alpha"] = args.gradnorm_alpha
     config["sam_rho"] = args.sam_rho
+    if args.cb_entropy is not None:
+        config["cb_entropy"] = [float(x) for x in args.cb_entropy.split(",")]
+        assert len(config["cb_entropy"]) == 7, f"cb_entropy must have 7 values, got {len(config['cb_entropy'])}"
     config["checkpoint_mode"] = args.checkpoint_mode
     config["s2_mode"] = args.s2_mode
     if args.cb_weights is not None:

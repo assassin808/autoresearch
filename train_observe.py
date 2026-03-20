@@ -28,7 +28,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 
-sys.path.insert(0, "/workspace/mini-omni-ref")
+sys.path.insert(0, os.environ.get("MINI_OMNI_REF", "/workspace/mini-omni-ref"))
 from litgpt.config import Config
 from litgpt.model import GPT
 
@@ -572,7 +572,7 @@ def train(config=None, output_dir="results/obs_1"):
     )
 
     # Data
-    data_dir = "/root/.cache/autoresearch/s2_data"
+    data_dir = os.environ.get("S2_DATA_DIR", "/root/.cache/autoresearch/s2_data")
     train_dataset = OmniS2Dataset(f"{data_dir}/train.pt")
     val_dataset = OmniS2Dataset(f"{data_dir}/val.pt")
 

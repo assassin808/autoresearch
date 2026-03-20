@@ -189,7 +189,7 @@ def build_A1A2(whisper_len, snac_frames, max_len=2048):
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output_dir", default="/root/.cache/autoresearch/s2_data")
+    parser.add_argument("--output_dir", default=os.environ.get("S2_DATA_DIR", "/root/.cache/autoresearch/s2_data"))
     parser.add_argument("--max_len", type=int, default=2048)
     parser.add_argument("--max_samples", type=int, default=None, help="Limit samples for testing")
     parser.add_argument("--val_fraction", type=float, default=0.02)
@@ -205,7 +205,7 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2-0.5B", trust_remote_code=True)
 
     # Find all parquet blobs
-    blob_dir = "/workspace/.hf_home/hub/datasets--gpt-omni--VoiceAssistant-400K/blobs"
+    blob_dir = os.environ.get("VA400K_BLOBS", "/workspace/.hf_home/hub/datasets--gpt-omni--VoiceAssistant-400K/blobs")
     blobs = sorted(glob.glob(f"{blob_dir}/*"))
 
     parquet_files = []

@@ -18,7 +18,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-sys.path.insert(0, "/workspace/mini-omni-ref")
+sys.path.insert(0, os.environ.get("MINI_OMNI_REF", "/workspace/mini-omni-ref"))
 from litgpt.config import Config
 from litgpt.model import GPT
 
@@ -29,7 +29,7 @@ AUDIO_VOCAB_SIZE = 4160
 
 
 def load_model(ckpt_path):
-    config = Config.from_file("/workspace/mini-omni-ckpt/model_config.yaml")
+    config = Config.from_file(os.path.join(os.environ.get("MINI_OMNI_CKPT", "/workspace/mini-omni-ckpt"), "model_config.yaml"))
     model = GPT(config)
     ckpt = torch.load(ckpt_path, map_location='cpu', weights_only=True)
     model.load_state_dict(ckpt, strict=True)
@@ -116,7 +116,7 @@ def main():
     model = load_model(args.ckpt)
 
     print(f"Loading val data...")
-    val_data = torch.load("/root/.cache/autoresearch/s3_data/val.pt", weights_only=False)
+    val_data = torch.load(os.path.join(os.environ.get("S3_DATA_DIR", "/root/.cache/autoresearch/s3_data"), "val.pt"), weights_only=False)
 
     print(f"Evaluating on {min(args.max_samples, len(val_data))} samples...")
     results = evaluate(model, val_data, args.max_samples)
