@@ -391,7 +391,7 @@ class DiagnosticTracker:
         }
 
     def compute_embedding_rank(self, model):
-        """D6: effective rank of text vs audio embeddings."""
+        """D6: effective rank of text/audio embeddings + key backbone weight matrices."""
         wte = model.transformer.wte.weight.data.float()
         text_emb = wte[:TEXT_VOCAB_SIZE]
         audio_emb = wte[TEXT_VOCAB_SIZE:]
@@ -409,10 +409,26 @@ class DiagnosticTracker:
             except:
                 return 0.0
 
-        return {
+        result = {
             "text_rank": effective_rank(text_emb),
             "audio_rank": effective_rank(audio_emb),
         }
+
+        # Backbone weight ranks at layers 0, 6, 12, 18, 23
+        for li in [0, 6, 12, 18, 23]:
+            block = model.transformer.h[li]
+            try:
+                attn_w = block.attn.attn.weight.data.float().cpu()
+                result[f"layer{li}_attn_rank"] = effective_rank(attn_w)
+            except:
+                pass
+            try:
+                mlp_w = block.mlp.fc_1.weight.data.float().cpu()
+                result[f"layer{li}_mlp_rank"] = effective_rank(mlp_w)
+            except:
+                pass
+
+        return result
 
     def compute_topk_and_histogram(self, model, val_loader, max_batches=20):
         """D8: top-k accuracy and loss histogram for text and audio.
@@ -820,6 +836,21 @@ def load_mini_omni_checkpoint(ckpt_dir=os.environ.get("MINI_OMNI_CKPT", "/worksp
     return model
 
 
+def load_from_checkpoint(path, ckpt_dir=os.environ.get("MINI_OMNI_CKPT", "/workspace/mini-omni-ckpt")):
+    """Load model from a previously saved checkpoint .pt file."""
+    config = Config.from_file(f"{ckpt_dir}/model_config.yaml")
+    model = GPT(config)
+    ckpt = torch.load(path, map_location='cpu', weights_only=True)
+    result = model.load_state_dict(ckpt, strict=True)
+    print(f"Loaded from {path}: missing={len(result.missing_keys)}, "
+          f"unexpected={len(result.unexpected_keys)}")
+    del ckpt
+    gc.collect()
+    n_params = sum(p.numel() for p in model.parameters())
+    print(f"Total params: {n_params:,}")
+    return model
+
+
 def build_post_s1_checkpoint(ckpt_dir=os.environ.get("MINI_OMNI_CKPT", "/workspace/mini-omni-ckpt")):
     """Build a post-S1 checkpoint: Qwen2-0.5B + trained whisper_adapter + fresh audio embeddings.
 
@@ -920,8 +951,12 @@ def train(config=None, output_dir="results/s3_adam"):
         json.dump(config, f, indent=2)
 
     # ---- Model ----
+    init_checkpoint = config.get("init_checkpoint", None)
     checkpoint_mode = config.get("checkpoint_mode", "published")
-    if checkpoint_mode == "post_s1":
+    if init_checkpoint:
+        print(f"Loading from saved checkpoint: {init_checkpoint}")
+        model = load_from_checkpoint(init_checkpoint)
+    elif checkpoint_mode == "post_s1":
         print("Building post-S1 checkpoint (Qwen2 + adapters, no S2)...")
         model = build_post_s1_checkpoint()
     else:
@@ -1602,6 +1637,8 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint_mode", default="published",
                         choices=["published", "post_s1"],
                         help="Checkpoint init: published (post-S3) or post_s1 (Qwen2+adapters)")
+    parser.add_argument("--init_checkpoint", default=None,
+                        help="Path to saved .pt checkpoint (overrides checkpoint_mode)")
     # Exp D: S2 mode
     parser.add_argument("--s2_mode", action="store_true",
                         help="Authentic S2: text-only training, freeze adapters, full val diagnostics")
@@ -1626,6 +1663,7 @@ if __name__ == "__main__":
         config["cb_entropy"] = [float(x) for x in args.cb_entropy.split(",")]
         assert len(config["cb_entropy"]) == 7, f"cb_entropy must have 7 values, got {len(config['cb_entropy'])}"
     config["checkpoint_mode"] = args.checkpoint_mode
+    config["init_checkpoint"] = args.init_checkpoint
     config["s2_mode"] = args.s2_mode
     config["freeze_backbone"] = args.freeze_backbone
     config["audio_emb_init"] = args.audio_emb_init
