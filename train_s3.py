@@ -942,6 +942,54 @@ def train(config=None, output_dir="results/s3_adam"):
                 n_frozen += 1
         print(f"[s2_mode] Froze {n_frozen} whisper_adapter params")
 
+    # Audio embedding initialization from text embeddings
+    audio_emb_init = config.get("audio_emb_init", None)
+    if audio_emb_init and checkpoint_mode == "post_s1":
+        wte = model.transformer.wte.weight.data
+        text_emb = wte[:TEXT_VOCAB_SIZE].float()  # (152000, 896)
+        n_audio = wte.shape[0] - TEXT_VOCAB_SIZE   # 29120
+        if audio_emb_init == "sample":
+            # Random samples from text embeddings
+            idx = torch.randperm(TEXT_VOCAB_SIZE)[:n_audio]
+            wte[TEXT_VOCAB_SIZE:] = text_emb[idx].to(wte.dtype)
+            print(f"[audio_emb_init=sample] Initialized {n_audio} audio embeddings from random text embeddings")
+        elif audio_emb_init == "kmeans":
+            # K-means clustering of text embeddings (approximate with mini-batch)
+            print(f"[audio_emb_init=kmeans] Running k-means on text embeddings...")
+            from torch import cdist
+            # Subsample text embeddings for speed
+            n_sample = min(50000, TEXT_VOCAB_SIZE)
+            sample_idx = torch.randperm(TEXT_VOCAB_SIZE)[:n_sample]
+            X = text_emb[sample_idx]  # (50000, 896)
+            # Initialize centroids randomly from X
+            centroids = X[torch.randperm(n_sample)[:n_audio]].clone()  # (29120, 896)
+            for km_iter in range(20):
+                dists = cdist(X, centroids)  # (50000, 29120) — large but float32 on CPU
+                assignments = dists.argmin(dim=1)
+                new_centroids = torch.zeros_like(centroids)
+                counts = torch.zeros(n_audio)
+                for i in range(n_sample):
+                    new_centroids[assignments[i]] += X[i]
+                    counts[assignments[i]] += 1
+                mask = counts > 0
+                new_centroids[mask] /= counts[mask].unsqueeze(1)
+                # Re-init empty clusters
+                empty = ~mask
+                if empty.any():
+                    new_centroids[empty] = X[torch.randperm(n_sample)[:empty.sum()]]
+                centroids = new_centroids
+            wte[TEXT_VOCAB_SIZE:] = centroids.to(wte.dtype)
+            print(f"[audio_emb_init=kmeans] Initialized {n_audio} audio embeddings from {n_sample} text embedding k-means")
+
+    # Freeze backbone: only train embeddings + adapter + heads
+    if config.get("freeze_backbone", False):
+        n_frozen = 0
+        for name, p in model.named_parameters():
+            if "transformer.h." in name or "transformer.ln_f" in name:
+                p.requires_grad = False
+                n_frozen += 1
+        print(f"[freeze_backbone] Froze {n_frozen} backbone params (transformer.h + ln_f)")
+
     # Gradient checkpointing for VRAM
     import types
     for block in model.transformer.h:
@@ -986,6 +1034,25 @@ def train(config=None, output_dir="results/s3_adam"):
     whisper_dir = os.path.join(data_dir, "whisper_features")
     if not os.path.isdir(whisper_dir):
         whisper_dir = None
+
+    curriculum_step = config.get("curriculum", 0)
+    if curriculum_step > 0:
+        # Phase 1: A1T2 only (easiest audio task)
+        train_dataset_curriculum = OmniS3Dataset(f"{data_dir}/train.pt",
+                                                  whisper_dir=whisper_dir)
+        # Filter to A1T2 only
+        orig_len = len(train_dataset_curriculum.data)
+        train_dataset_curriculum.data = [d for d in train_dataset_curriculum.data if d['task'] == 'A1T2']
+        print(f"[curriculum] Phase 1 (steps 1-{curriculum_step}): A1T2 only, "
+              f"{orig_len} → {len(train_dataset_curriculum.data)} samples")
+        train_loader_curriculum = DataLoader(
+            train_dataset_curriculum, batch_size=config["batch_size"],
+            shuffle=True, collate_fn=collate_fn, num_workers=2,
+            pin_memory=True, drop_last=True,
+        )
+        # Phase 2: all tasks (loaded later to save memory during phase 1)
+        print(f"[curriculum] Phase 2 (steps {curriculum_step+1}+): all 4 tasks")
+
     train_dataset = OmniS3Dataset(f"{data_dir}/train.pt", s2_mode=s2_mode,
                                    whisper_dir=whisper_dir)
     val_dataset = OmniS3Dataset(f"{data_dir}/val.pt",
@@ -1012,7 +1079,14 @@ def train(config=None, output_dir="results/s3_adam"):
           f"eff_batch={config['batch_size']*config['grad_accum']}")
     model.train()
     scaler = torch.amp.GradScaler('cuda')
-    train_iter = iter(train_loader)
+    # Curriculum: start with A1T2-only loader, switch to full loader at curriculum_step
+    if curriculum_step > 0:
+        active_loader = train_loader_curriculum
+        print(f"[curriculum] Starting with A1T2-only loader")
+    else:
+        active_loader = train_loader
+    train_iter = iter(active_loader)
+    curriculum_switched = False
 
     step = 0
     accum_text_loss = 0.0
@@ -1022,11 +1096,18 @@ def train(config=None, output_dir="results/s3_adam"):
     t0 = time.time()
 
     while step < config["max_steps"]:
+        # Curriculum: switch from A1T2-only to full dataset
+        if curriculum_step > 0 and step >= curriculum_step and not curriculum_switched:
+            active_loader = train_loader
+            train_iter = iter(active_loader)
+            curriculum_switched = True
+            print(f"\n[curriculum] Step {step}: switching to all 4 tasks")
+
         # Get batch
         try:
             streams, lm_text, lm_audio, tasks, audio_features, whisper_lens = next(train_iter)
         except StopIteration:
-            train_iter = iter(train_loader)
+            train_iter = iter(active_loader)
             streams, lm_text, lm_audio, tasks, audio_features, whisper_lens = next(train_iter)
 
         streams = streams.to(DEVICE)
@@ -1150,23 +1231,32 @@ def train(config=None, output_dir="results/s3_adam"):
             text_loss, audio_losses = compute_losses(model, streams, lm_text, lm_audio,
                                                      audio_features, whisper_lens, tasks)
 
-            # Entropy-scaled: divide each cb loss by its empirical entropy
+            # Entropy-scaled: normalize ALL losses by their random baselines
+            # so text and audio are on the same [0,1] scale
             if method == "entropy_scaled":
                 cb_entropy = config.get("cb_entropy", [1.0]*7)
-                audio_loss = sum(cb_w[i] * audio_losses[i] / cb_entropy[i] for i in range(7))
+                H_text_random = math.log(TEXT_VOCAB_SIZE)  # ln(152000) = 11.93
+                # Normalized losses: actual / H_random → [0, 1]
+                text_loss_norm = text_loss / H_text_random
+                audio_loss_norm = sum(cb_w[i] * audio_losses[i] / cb_entropy[i] for i in range(7)) / 7.0
+                # Now both are ~[0,1], combine with audio_weight
+                audio_weight = config.get("audio_weight", 1.0)
+                total_loss = text_loss_norm + audio_weight * audio_loss_norm
+                # For logging, use raw audio sum
+                audio_loss = sum(cb_w[i] * audio_losses[i] for i in range(7))
             else:
                 audio_loss = sum(cb_w[i] * audio_losses[i] for i in range(7))
 
-            # Task weighting
-            if method == "gradnorm":
-                audio_weight = w_audio_gn.item()
-                total_loss = w_text.item() * text_loss + audio_weight * audio_loss
-            elif method == "adaptive_lambda":
-                audio_weight = config.get("_current_lambda", config.get("audio_weight", 1.0))
-                total_loss = text_loss + audio_weight * audio_loss
-            else:
-                audio_weight = config.get("audio_weight", 1.0)
-                total_loss = text_loss + audio_weight * audio_loss
+                # Task weighting
+                if method == "gradnorm":
+                    audio_weight = w_audio_gn.item()
+                    total_loss = w_text.item() * text_loss + audio_weight * audio_loss
+                elif method == "adaptive_lambda":
+                    audio_weight = config.get("_current_lambda", config.get("audio_weight", 1.0))
+                    total_loss = text_loss + audio_weight * audio_loss
+                else:
+                    audio_weight = config.get("audio_weight", 1.0)
+                    total_loss = text_loss + audio_weight * audio_loss
 
             # Backward with gradient accumulation
             scaled_loss = total_loss / config["grad_accum"]
@@ -1259,8 +1349,10 @@ def train(config=None, output_dir="results/s3_adam"):
                     L_grad.backward()
                     gradnorm_opt.step()
 
-                    # Renormalize to sum to 2
+                    # Clamp to positive, then renormalize to sum to 2
                     with torch.no_grad():
+                        w_text.clamp_(min=0.01)
+                        w_audio_gn.clamp_(min=0.01)
                         wsum = w_text.item() + w_audio_gn.item()
                         w_text.mul_(2.0 / wsum)
                         w_audio_gn.mul_(2.0 / wsum)
@@ -1513,6 +1605,14 @@ if __name__ == "__main__":
     # Exp D: S2 mode
     parser.add_argument("--s2_mode", action="store_true",
                         help="Authentic S2: text-only training, freeze adapters, full val diagnostics")
+    # Batch 4: new experiment strategies
+    parser.add_argument("--freeze_backbone", action="store_true",
+                        help="Freeze transformer layers, only train embeddings + adapter + heads")
+    parser.add_argument("--audio_emb_init", default=None,
+                        choices=["kmeans", "sample"],
+                        help="Initialize audio embeddings from text embeddings (kmeans clusters or random samples)")
+    parser.add_argument("--curriculum", type=int, default=0,
+                        help="Curriculum: train only A1T2 for first N steps, then all 4 tasks")
     args = parser.parse_args()
 
     config = dict(S3_CONFIG)
@@ -1527,6 +1627,9 @@ if __name__ == "__main__":
         assert len(config["cb_entropy"]) == 7, f"cb_entropy must have 7 values, got {len(config['cb_entropy'])}"
     config["checkpoint_mode"] = args.checkpoint_mode
     config["s2_mode"] = args.s2_mode
+    config["freeze_backbone"] = args.freeze_backbone
+    config["audio_emb_init"] = args.audio_emb_init
+    config["curriculum"] = args.curriculum
     if args.cb_weights is not None:
         config["cb_weights"] = [float(x) for x in args.cb_weights.split(",")]
         assert len(config["cb_weights"]) == 7, f"cb_weights must have 7 values, got {len(config['cb_weights'])}"
