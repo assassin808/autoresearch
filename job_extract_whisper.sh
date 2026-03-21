@@ -10,8 +10,9 @@
 source narval_env.sh
 mkdir -p logs $S3_DATA_DIR/whisper_features
 
-# No network on compute nodes - use pre-downloaded model
+# No network on compute nodes - use pre-downloaded model + deps
 export TRANSFORMERS_OFFLINE=1
 export HF_DATASETS_OFFLINE=1
+export UV_OFFLINE=1
 
 uv run python prepare_s3.py --extract_whisper --output_dir $S3_DATA_DIR
