@@ -21,3 +21,4 @@ dev/
 
 # Results file
 results.tsv
+results/exp11_long_s2/model_final.pt
