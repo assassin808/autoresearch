@@ -1625,6 +1625,8 @@ if __name__ == "__main__":
                         help="GradNorm asymmetry parameter (higher = more aggressive rebalancing)")
     parser.add_argument("--cb_entropy", type=str, default=None,
                         help="Per-codebook entropy values, comma-separated 7 floats (for entropy_scaled)")
+    parser.add_argument("--grad_accum", type=int, default=None,
+                        help="Gradient accumulation steps (default 16, eff_batch=batch_size*grad_accum)")
     parser.add_argument("--no_save_model", action="store_true",
                         help="Skip saving model checkpoints (save disk)")
     # Exp A: codebook weighting
@@ -1671,6 +1673,8 @@ if __name__ == "__main__":
     if args.cb_weights is not None:
         config["cb_weights"] = [float(x) for x in args.cb_weights.split(",")]
         assert len(config["cb_weights"]) == 7, f"cb_weights must have 7 values, got {len(config['cb_weights'])}"
+    if args.grad_accum is not None:
+        config["grad_accum"] = args.grad_accum
     if args.no_save_model:
         config["save_every"] = 999999  # effectively never
     if args.lr_max is not None:
