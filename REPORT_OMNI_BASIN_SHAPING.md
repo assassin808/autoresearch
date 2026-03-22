@@ -1,7 +1,6 @@
 # Omni-Modal S3 Audio Plateau: Research Report
 
 **Date**: 2026-03-22
-**Researchers**: Yang (grad student, Prof. Xiaoxiao Li's group)
 **Cluster**: Narval (Compute Canada), A100 80GB GPUs
 **Branch**: `omni-basin-shaping`
 
@@ -566,10 +565,10 @@ Three experiments currently running on Narval A100 nodes:
 ### 8.1 Narval (Compute Canada) Deployment
 
 **Environment setup**: All paths configured via `narval_env.sh`:
-- Model checkpoint: `/scratch/yang0531/mini-omni-ckpt/`
-- Mini-omni reference code: `/scratch/yang0531/mini-omni-ref/`
-- S3 preprocessed data: `/scratch/yang0531/s3_data/` (65GB train + 1.4GB val)
-- HuggingFace cache: `/scratch/yang0531/hf_home/`
+- Model checkpoint: `/scratch/$USER/mini-omni-ckpt/`
+- Mini-omni reference code: `/scratch/$USER/mini-omni-ref/`
+- S3 preprocessed data: `/scratch/$USER/s3_data/` (65GB train + 1.4GB val)
+- HuggingFace cache: `/scratch/$USER/hf_home/`
 
 **Job submission**: `sbatch job_train_s3.sh` with SLURM resource requests for A100 80GB GPUs.
 

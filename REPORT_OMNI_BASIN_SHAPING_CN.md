@@ -1,7 +1,6 @@
 # Omni-Modal S3 音频平台期研究报告
 
 **日期**: 2026-03-22
-**研究者**: Yang（李晓晓教授课题组硕/博士生）
 **计算集群**: Narval (Compute Canada), A100 80GB GPU
 **分支**: `omni-basin-shaping`
 
@@ -566,10 +565,10 @@ CB0（最粗粒度，熵 6.03）达到低于随机 37%。CB2-6（最细粒度，
 ### 8.1 Narval (Compute Canada) 部署
 
 **环境配置**: 所有路径通过 `narval_env.sh` 设定：
-- 模型 checkpoint: `/scratch/yang0531/mini-omni-ckpt/`
-- Mini-omni 参考代码: `/scratch/yang0531/mini-omni-ref/`
-- S3 预处理数据: `/scratch/yang0531/s3_data/`（65GB train + 1.4GB val）
-- HuggingFace 缓存: `/scratch/yang0531/hf_home/`
+- 模型 checkpoint: `/scratch/$USER/mini-omni-ckpt/`
+- Mini-omni 参考代码: `/scratch/$USER/mini-omni-ref/`
+- S3 预处理数据: `/scratch/$USER/s3_data/`（65GB train + 1.4GB val）
+- HuggingFace 缓存: `/scratch/$USER/hf_home/`
 
 **任务提交**: `sbatch job_train_s3.sh`，请求 A100 80GB GPU 的 SLURM 资源。
 
