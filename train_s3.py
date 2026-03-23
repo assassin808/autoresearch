@@ -1312,8 +1312,10 @@ def train(config=None, output_dir="results/s3_adam"):
                 config["max_grad_norm"]
             )
 
-            # LR schedule
-            lr = get_cosine_lr(step, config["max_steps"],
+            # LR schedule (use global step for correct schedule across chained runs)
+            global_step = config.get("start_step", 0) + step
+            lr_total = config.get("lr_total_steps", config["max_steps"] + config.get("start_step", 0))
+            lr = get_cosine_lr(global_step, lr_total,
                               config["lr_max"], config["lr_min"],
                               config["warmup_steps"])
             for pg in optimizer.param_groups:
@@ -1610,6 +1612,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Mini-omni S3 training")
     parser.add_argument("--output_dir", default="results/s3_adam")
     parser.add_argument("--max_steps", type=int, default=5000)
+    parser.add_argument("--start_step", type=int, default=0,
+                        help="Global step offset for LR schedule (for chained runs)")
+    parser.add_argument("--lr_total_steps", type=int, default=None,
+                        help="Total planned steps for LR cosine schedule (default=start_step+max_steps)")
     parser.add_argument("--audio_weight", type=float, default=1.0)
     parser.add_argument("--lr_max", type=float, default=None)
     parser.add_argument("--lr_min", type=float, default=None)
@@ -1657,6 +1663,9 @@ if __name__ == "__main__":
     config = dict(S3_CONFIG)
     config["max_steps"] = args.max_steps
     config["audio_weight"] = args.audio_weight
+    config["start_step"] = args.start_step
+    if args.lr_total_steps is not None:
+        config["lr_total_steps"] = args.lr_total_steps
     config["method"] = args.method
     config["adaptive_alpha"] = args.adaptive_alpha
     config["gradnorm_alpha"] = args.gradnorm_alpha
