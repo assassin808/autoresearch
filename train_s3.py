@@ -809,6 +809,202 @@ class DiagnosticTracker:
         model.train()
         return {"baseline_loss": baseline_loss, "perturbations": results}
 
+    # ------------------------------------------------------------------
+    # D14 + D15: GSNR diagnostics and text subspace projection
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _is_gsnr_param(name):
+        """Parameters for D14 GSNR tracking (wte + layer 0 + layer 23)."""
+        return ("wte" in name or "lm_head" in name or
+                "transformer.h.0." in name or "transformer.h.23." in name)
+
+    @staticmethod
+    def _is_subspace_param(name):
+        """Parameters for D15 subspace analysis (layer 0 + layer 23 only)."""
+        return ("transformer.h.0." in name or "transformer.h.23." in name)
+
+    def _build_param_index(self, model, filter_fn):
+        """Build ordered list of (name, numel, offset) for param subset."""
+        index = []
+        offset = 0
+        for name, p in model.named_parameters():
+            if p.requires_grad and filter_fn(name):
+                index.append((name, p.numel(), offset))
+                offset += p.numel()
+        return index, offset  # index, total_dim
+
+    def _extract_flat_grad(self, model, param_index, total_d, device='cuda', dtype=torch.bfloat16):
+        """Extract gradients for indexed params into a flat tensor."""
+        flat = torch.zeros(total_d, dtype=dtype, device=device)
+        param_dict = {n: p for n, p in model.named_parameters()}
+        for name, numel, offset in param_index:
+            p = param_dict[name]
+            if p.grad is not None:
+                flat[offset:offset+numel] = p.grad.view(-1).to(dtype=dtype, device=device)
+        return flat
+
+    def _get_diag_batch(self, val_loader):
+        """Get a single val batch with both text and audio masks active."""
+        for s, lt, la, tasks_d, af, wl in val_loader:
+            if lt.any() and la.any():
+                max_t = min(s.shape[2], 512)
+                return (s[:, :, :max_t].to(DEVICE), lt[:, :max_t].to(DEVICE),
+                        la[:, :max_t].to(DEVICE), tasks_d,
+                        af.to(DEVICE) if af is not None else None,
+                        wl.to(DEVICE) if wl is not None else None)
+        return None
+
+    def compute_gsnr_and_subspace(self, model, val_loader, K=16, k_svd=16):
+        """D14 + D15 combined: GSNR estimation and text subspace projection.
+
+        D14: Accumulate K batches of text/audio gradients, measure cos at K=1,2,4,8,16.
+             If cos increases with K → acoustic noise masks semantic signal.
+        D15: SVD on text gradients, project audio gradient onto text subspace.
+             If energy_ratio >> k/d → audio has hidden semantic component.
+        """
+        model.eval()
+
+        # Build param indices
+        gsnr_index, gsnr_dim = self._build_param_index(model, self._is_gsnr_param)
+        sub_index, sub_dim = self._build_param_index(model, self._is_subspace_param)
+
+        if gsnr_dim == 0 or sub_dim == 0:
+            model.train()
+            return {"error": "no matching parameters"}
+
+        # D14: running sums on GPU (bfloat16)
+        sum_text = torch.zeros(gsnr_dim, dtype=torch.bfloat16, device=DEVICE)
+        sum_audio = torch.zeros(gsnr_dim, dtype=torch.bfloat16, device=DEVICE)
+        # For GSNR variance: sum of squared per-element values (CPU float32)
+        ssq_audio = torch.zeros(gsnr_dim, dtype=torch.float32)
+
+        # D15: text gradient matrix on CPU (float32), audio accumulated on CPU
+        K_sub = min(K, k_svd)  # use same K batches for both
+        G_T = torch.zeros(K_sub, sub_dim, dtype=torch.float32)
+        sum_audio_sub = torch.zeros(sub_dim, dtype=torch.float32)
+
+        cos_at_k = {}
+        checkpoints = {1, 2, 4, 8, 16}
+        k = 0
+
+        for s, lt, la, tasks_d, af, wl in val_loader:
+            if k >= K:
+                break
+            if not (lt.any() and la.any()):
+                continue
+
+            max_t = min(s.shape[2], 512)
+            s_dev = s[:, :, :max_t].to(DEVICE)
+            lt_dev = lt[:, :max_t].to(DEVICE)
+            la_dev = la[:, :max_t].to(DEVICE)
+            af_dev = af.to(DEVICE) if af is not None else None
+            wl_dev = wl.to(DEVICE) if wl is not None else None
+
+            # --- Text backward ---
+            model.zero_grad()
+            text_loss, _ = compute_losses(model, s_dev, lt_dev, la_dev,
+                                          af_dev, wl_dev, tasks_d)
+            if text_loss.item() > 0:
+                text_loss.backward()
+
+            g_t_gsnr = self._extract_flat_grad(model, gsnr_index, gsnr_dim)
+            sum_text += g_t_gsnr
+            if k < K_sub:
+                G_T[k] = self._extract_flat_grad(model, sub_index, sub_dim,
+                                                  device='cpu', dtype=torch.float32)
+
+            # --- Audio backward ---
+            model.zero_grad()
+            _, audio_losses = compute_losses(model, s_dev, lt_dev, la_dev,
+                                              af_dev, wl_dev, tasks_d)
+            audio_total = sum(audio_losses)
+            if audio_total.item() > 0:
+                audio_total.backward()
+
+            g_a_gsnr = self._extract_flat_grad(model, gsnr_index, gsnr_dim)
+            sum_audio += g_a_gsnr
+            ssq_audio += g_a_gsnr.float().cpu() ** 2
+            if k < K_sub:
+                sum_audio_sub += self._extract_flat_grad(model, sub_index, sub_dim,
+                                                          device='cpu', dtype=torch.float32)
+
+            k += 1
+
+            # D14: cos at checkpoint K values
+            if k in checkpoints:
+                st = sum_text.float()
+                sa = sum_audio.float()
+                cos_val = F.cosine_similarity(st.unsqueeze(0), sa.unsqueeze(0)).item()
+                cos_at_k[k] = round(cos_val, 6)
+
+            del s_dev, lt_dev, la_dev, af_dev, wl_dev, g_t_gsnr, g_a_gsnr
+
+        # --- D14: GSNR estimates ---
+        gsnr_audio = gsnr_text = 0.0
+        if k > 1:
+            mu_audio = sum_audio.float().cpu() / k
+            var_audio = (ssq_audio / k) - mu_audio ** 2
+            var_audio = var_audio.clamp(min=0)
+            gsnr_audio = (mu_audio.norm() ** 2 / (var_audio.sum() + 1e-10)).item()
+
+        # --- D15: SVD + projection ---
+        d15_result = {}
+        k_used = min(k, K_sub)
+        if k_used >= 2:
+            G_T = G_T[:k_used]
+            try:
+                U, S, Vt = torch.linalg.svd(G_T, full_matrices=False)
+                g_A = sum_audio_sub / k_used
+                mu_T = G_T.mean(dim=0)
+                g_A_norm_sq = g_A.norm() ** 2
+
+                energy_by_k = {}
+                for top_k in [1, 2, 4, 8, min(16, k_used)]:
+                    if top_k > k_used:
+                        continue
+                    V_k = Vt[:top_k]  # (top_k, d)
+                    coeffs = V_k @ g_A  # (top_k,)
+                    g_A_proj = V_k.T @ coeffs  # (d,)
+                    ratio = (g_A_proj.norm() ** 2 / (g_A_norm_sq + 1e-10)).item()
+                    energy_by_k[top_k] = round(ratio, 6)
+
+                # Best projection: cos with mean text
+                best_k = min(16, k_used)
+                V_best = Vt[:best_k]
+                g_A_proj_best = V_best.T @ (V_best @ g_A)
+                cos_proj = F.cosine_similarity(
+                    g_A_proj_best.unsqueeze(0), mu_T.unsqueeze(0)).item()
+                cos_raw = F.cosine_similarity(
+                    g_A.unsqueeze(0), mu_T.unsqueeze(0)).item()
+
+                d15_result = {
+                    "energy_ratio": energy_by_k.get(best_k, 0),
+                    "random_baseline": round(best_k / sub_dim, 8),
+                    "cos_proj_text": round(cos_proj, 6),
+                    "cos_raw_text": round(cos_raw, 6),
+                    "top_singular_values": [round(v, 4) for v in S[:best_k].tolist()],
+                    "energy_ratio_by_k": {str(kk): v for kk, v in energy_by_k.items()},
+                    "param_dim": sub_dim,
+                }
+            except Exception as e:
+                d15_result = {"error": str(e)}
+
+        # Cleanup
+        del sum_text, sum_audio, ssq_audio, G_T, sum_audio_sub
+        model.zero_grad()
+        torch.cuda.empty_cache()
+        model.train()
+
+        return {
+            "gsnr": {
+                "cos_accumulated": {str(kk): v for kk, v in cos_at_k.items()},
+                "gsnr_audio": round(gsnr_audio, 6),
+                "n_batches": k,
+                "gsnr_param_dim": gsnr_dim,
+            },
+            "text_subspace": d15_result,
+        }
+
 
 # ============================================================================
 # Model loading
@@ -1484,6 +1680,25 @@ def train(config=None, output_dir="results/s3_adam"):
                         print(f"  [cka] {cka_str}")
                     except Exception as e:
                         print(f"  [diag] CKA failed: {e}")
+
+                    # D14+D15: GSNR and text subspace projection (every 500 steps)
+                    try:
+                        gsnr_sub = tracker.compute_gsnr_and_subspace(
+                            model, val_loader, K=16, k_svd=16)
+                        diag.update(gsnr_sub)
+                        gd = gsnr_sub.get("gsnr", {})
+                        cos_acc = gd.get("cos_accumulated", {})
+                        sd = gsnr_sub.get("text_subspace", {})
+                        print(f"  [gsnr] cos@1={cos_acc.get('1',0):.4f} "
+                              f"cos@4={cos_acc.get('4',0):.4f} "
+                              f"cos@16={cos_acc.get('16',0):.4f} "
+                              f"GSNR_A={gd.get('gsnr_audio',0):.4f}")
+                        print(f"  [subspace] energy={sd.get('energy_ratio',0):.6f} "
+                              f"(rand={sd.get('random_baseline',0):.2e}) "
+                              f"cos_proj={sd.get('cos_proj_text',0):.4f} "
+                              f"cos_raw={sd.get('cos_raw_text',0):.4f}")
+                    except Exception as e:
+                        print(f"  [diag] GSNR/subspace failed: {e}")
 
                 model.train()
                 optimizer.zero_grad()
