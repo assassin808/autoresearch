@@ -1633,6 +1633,8 @@ if __name__ == "__main__":
                         help="Per-codebook entropy values, comma-separated 7 floats (for entropy_scaled)")
     parser.add_argument("--grad_accum", type=int, default=None,
                         help="Gradient accumulation steps (default 16, eff_batch=batch_size*grad_accum)")
+    parser.add_argument("--save_every", type=int, default=None,
+                        help="Save checkpoint every N steps (default 2500)")
     parser.add_argument("--no_save_model", action="store_true",
                         help="Skip saving model checkpoints (save disk)")
     # Exp A: codebook weighting
@@ -1684,6 +1686,8 @@ if __name__ == "__main__":
         assert len(config["cb_weights"]) == 7, f"cb_weights must have 7 values, got {len(config['cb_weights'])}"
     if args.grad_accum is not None:
         config["grad_accum"] = args.grad_accum
+    if args.save_every is not None:
+        config["save_every"] = args.save_every
     if args.no_save_model:
         config["save_every"] = 999999  # effectively never
     if args.lr_max is not None:
