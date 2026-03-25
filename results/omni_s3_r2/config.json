@@ -1,0 +1,41 @@
+{
+  "lr_max": 2e-05,
+  "lr_min": 2e-06,
+  "batch_size": 2,
+  "grad_accum": 96,
+  "max_steps": 5500,
+  "warmup_steps": 1500,
+  "weight_decay": 0.01,
+  "adam_betas": [
+    0.9,
+    0.95
+  ],
+  "adam_eps": 1e-08,
+  "max_grad_norm": 1.0,
+  "audio_weight": 1.0,
+  "cb_weights": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "diag_every": 100,
+  "basin_every": 1000,
+  "val_every": 200,
+  "save_every": 2500,
+  "start_step": 5500,
+  "lr_total_steps": 27500,
+  "method": "baseline",
+  "adaptive_alpha": 0.1,
+  "gradnorm_alpha": 1.5,
+  "sam_rho": 0.05,
+  "checkpoint_mode": "published",
+  "init_checkpoint": "results/omni_s3_r1/model_final.pt",
+  "s2_mode": false,
+  "freeze_backbone": false,
+  "audio_emb_init": null,
+  "curriculum": 0
+}
