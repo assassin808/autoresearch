@@ -601,6 +601,86 @@ Three experiments currently running on Narval A100 nodes:
 
 ---
 
+## 10. Deep Diagnostic Analysis
+
+This section presents fine-grained diagnostic results from linear probes, gradient analysis, embedding structure tracking, and sample efficiency measurements across extended training runs (up to 30k steps and chain R3).
+
+### 10.1 Linear Probe: Train vs Val Gap
+
+Linear probes trained on backbone hidden states reveal that audio information is encoded but does not generalize:
+
+| Probe Layer | Train Accuracy | Val Accuracy | Gap |
+|-------------|---------------|-------------|-----|
+| L18 (deep)  | 0.771         | 0.062       | 12x |
+| L12 (mid)   | 0.573         | 0.061       | ~9x |
+| L6 (shallow)| 0.186         | 0.062       | 3x  |
+
+*(S2→S3 30k checkpoint, probed at step 30k)*
+
+The backbone encodes audio information with 77% train accuracy at L18, but this does not generalize to held-out data (val ~6% across all layers, near random). The information is position/context-specific rather than abstract. Deeper layers overfit more severely, consistent with memorization rather than learning generalizable audio representations.
+
+### 10.2 Linear Probe Val Loss Evolution
+
+Tracking validation loss of linear probes across training:
+
+| Probe Layer | Early Training | Chain R3 (16.5k steps) | S2→S3 30k |
+|-------------|---------------|------------------------|-----------|
+| L6          | 6.434         | 6.274 (slow improvement)| —        |
+| L12         | 6.967         | 6.435                  | —         |
+| L18         | 7.706         | 7.016                  | 7.900     |
+
+The chain training (R3) shows gradual improvement in probe val loss, indicating the backbone is slowly developing generalizable audio representations. However, S2→S3 30k at L18 gives val loss 7.900 — worse than the chain R3 baseline despite more total steps. This is consistent with CKA similarity of 0.987 locking the backbone near its pretrained state, preventing deep layers from optimizing for audio.
+
+### 10.3 CB0 Top-k Accuracy Trajectory
+
+Codebook 0 (the primary audio stream) prediction accuracy improves continuously but slowly:
+
+| Checkpoint     | Top-1 Accuracy | Top-10 Accuracy |
+|----------------|---------------|-----------------|
+| Baseline 3k    | 0.048         | 0.207           |
+| S2→S3 30k      | 0.146         | 0.421           |
+| Chain R3       | 0.159         | 0.444           |
+
+The model IS learning audio prediction — top-1 accuracy tripled from baseline to chain R3. However, the rate of improvement decelerates, and absolute accuracy remains low. This confirms the plateau is not a hard capability limit but rather a slow optimization problem.
+
+### 10.4 Module Gradient Concentration
+
+Gradient norm evolution reveals that audio learning concentrates in input-adjacent layers:
+
+**Audio gradients (S2→S3 30k)**:
+- `layer0`: grows 2.5 → 45 (18x increase)
+- `lm_head`: grows 9 → 50 (5.5x increase)
+
+**Text gradients (S2→S3 30k)**:
+- `layer0`: grows 8.8 → 13 (1.5x increase only)
+
+Audio gradients concentrate heavily in the first transformer layer and the output head, while intermediate backbone layers receive comparatively small audio gradients. Text gradients remain distributed more evenly. This asymmetry suggests the backbone acts as a near-frozen "pass-through" for audio, with learning confined to the periphery (input embedding + output projection).
+
+### 10.5 Embedding Cosine Structure
+
+D13 embedding cosine similarity tracks whether audio embeddings develop directional structure:
+
+| Checkpoint | Mean Cosine Similarity |
+|------------|----------------------|
+| Baseline   | 0.018                |
+| Chain R1   | 0.054                |
+| Chain R3   | 0.124                |
+
+Audio embeddings are evolving from near-random (cosine ~0) toward directional structure (cosine 0.124), but are far from collapsing. This progressive structuring is a positive sign — the embeddings are differentiating — but the slow pace mirrors the overall audio plateau.
+
+### 10.6 Sample Efficiency: Small Batch Wins
+
+Comparing effective batch sizes on sample efficiency (total training samples to reach a given val A1A2 loss):
+
+| Target val A1A2 | eff=32 (samples needed) | eff=192 (samples needed) | Ratio |
+|-----------------|------------------------|--------------------------|-------|
+| 42              | 346k                   | 960k                     | 2.8x  |
+| 38              | 672k                   | 1,478k                   | 2.2x  |
+
+Smaller effective batch size (32) reaches the same loss targets with 2-3x fewer samples than large batch (192). This is consistent with critical batch size theory: the audio loss landscape has a small critical batch size, meaning gradient noise from small batches provides beneficial exploration. Larger batches waste compute by over-averaging gradients in a regime where noise helps escape plateaus.
+
+---
+
 ## Appendix A: Full Experiment Registry
 
 | # | Name | Method | Steps | LR | Batch (eff) | S2 | Freeze | Emb Init | Curriculum | Init Ckpt |
