@@ -622,6 +622,123 @@ Three experiments currently running on Narval A100 nodes:
 | exp16 | Long S2->S3 | baseline | 30000 | 2e-5 | 32 | No | No | None | 0 | exp11 final |
 | exp17 | No S2 large batch | baseline | 5000 | 2e-5 | 192 | No | No | None | 0 | post-S1 |
 
+## 9. Updated Findings (Batches 5-6 + Mini-Omni Chain)
+
+This section covers findings from experiments 15-17 (Batches 5-6), the mini-omni chain (R1-R3), and the new D14/D15 diagnostics. These results substantially revise the conclusions from Sections 1-8.
+
+### 9.1 Audio Plateau DOES Break with More Steps
+
+exp16 (S2→S3, eff=32, 30k steps) val per-task audio loss:
+
+| Step | A1A2 | A1T2 |
+|------|------|------|
+| 2000 | 49.5 | 23.3 |
+| 10000 | 42.5 | 19.8 |
+| 20000 | 38.2 | 17.7 |
+| 30000 | 36.8 | 17.1 |
+
+Chain R3 (global ~16500, eff=192): A1A2=32.3, A1T2=14.9
+
+The previous claim that "val losses are identical across methods" was only true at 3k steps. With sufficient training, audio loss continues to decrease steadily.
+
+### 9.2 S2 Pre-training Does NOT Help Val Loss
+
+- exp12 vs exp13 (10k steps): val A1A2 = 44.8 vs 44.9 (identical)
+- exp15 vs exp17 (5k steps, eff=192): val A1A2 = 44.6 vs 43.9 (no S2 slightly better)
+
+S2 makes the basin wider (86 vs 205 at 10k) but does not improve model capability.
+
+### 9.3 More Steps >> Batch Size >> S2
+
+- exp15 (S2, eff=192, 5k): val A1A2=44.6
+- exp16 (S2, eff=32, 30k): val A1A2=36.8
+- exp17 (no S2, eff=192, 5k): val A1A2=43.9
+
+Same total samples (960k) but 30k small-batch steps beats 5k large-batch steps decisively.
+
+### 9.4 Per-Codebook Learning Rates Differ
+
+From exp16 at 30k steps, CB losses dropped from initial to final:
+
+| Codebook | Initial | Final | Reduction |
+|----------|---------|-------|-----------|
+| CB0 (semantic) | 5.56 | 4.56 | 18% |
+| CB1 | 6.56 | 4.31 | 34% |
+| CB2 | 7.56 | 5.78 | 24% |
+| CB4 | 6.50 | 3.56 | 45% (most improvement) |
+| CB5 | 7.78 | 6.31 | 19% |
+| CB6 | 7.62 | 5.94 | 22% |
+
+CB4 and CB1 learn fastest after CB0. CB5 and CB6 are slowest.
+
+### 9.5 Basin Width Increases with Training (S2→S3)
+
+exp16 basin width (eps=0.01 degradation):
+
+| Step | Basin Width |
+|------|-------------|
+| 1k | 39.9 |
+| 10k | 69.8 |
+| 20k | 121.7 |
+| 30k | 163.3 |
+
+The basin gets wider (more robust) with more training. Compare Long S3 (no S2): s1k=335.6 → s10k=204.5 (starts sharp, slowly flattens).
+
+### 9.6 CKA: Two Completely Different Representation Paths
+
+- **S2→S3 (exp16)**: CKA stays >0.987 throughout 30k steps — backbone barely changes from S2 state
+- **Long S3 (exp13)**: CKA drops to 0.03 by step 2000 — backbone completely reshaped
+- **Chain (R1-R3)**: CKA stays at 1.000 — even more stable with large batch
+
+Yet both paths reach similar val performance. The model finds different but equally good representations.
+
+### 9.7 D14 GSNR Confirms Low Audio Signal
+
+Audio GSNR evolution (mini-omni chain):
+
+| Checkpoint | GSNR |
+|------------|------|
+| R2 start | 0.127 |
+| R2 end | 0.074 |
+| R3 end | 0.083 |
+
+GSNR < 1 means gradient variance >> signal. This explains why audio learning is slow. cos@K=16 ≈ 0.01 — even accumulating 16 batches does not stabilize audio gradient direction.
+
+### 9.8 D15 Text Subspace: Audio Gradients in Separate Space
+
+energy_ratio ≈ 0.001-0.006 (0.1-0.6% of audio gradient energy lies in the text subspace).
+
+Audio and text learn in almost completely orthogonal parameter subspaces. This is not interference — they simply do not interact much.
+
+### 9.9 Linear Probe Saturates at ~6%
+
+- exp16 30k: probe accuracy 3.7% → 6.1% (plateau around 6%)
+- Chain R3: ~6%
+- Growth rate: ~+0.1% per 1000 steps initially, then plateaus
+
+The backbone accumulates minimal audio information regardless of training length.
+
+### 9.10 Displacement Saturates
+
+- exp16: total displacement 59 → 137 (step 5k → 30k), backbone 23 → 51
+- Growth slows logarithmically — parameters finding equilibrium
+- Audio embedding displacement = 0 (tie_word_embeddings, gradient flows through lm_head)
+
+### 9.11 Audio Gradient Norm Ratio (rho) Increases
+
+exp16: rho goes from ~0.4 at 5k to ~2.6 at 30k. Audio gradients become larger than text gradients over time. Yet audio still learns slowly — confirming it is a direction (GSNR) problem, not a magnitude problem.
+
+### 9.12 Revised Conclusions
+
+1. **Audio plateau breaks with sufficient training (~30k steps)**, not a permanent limit
+2. **S2 pre-training affects optimization landscape but not final capability**
+3. **Training steps matter more than batch size or S2 pre-training**
+4. **GSNR ≈ 0.08 explains the slow learning**: audio needs ~12x more samples than text to extract the same signal
+5. **Text and audio learn in orthogonal subspaces** (D15 energy < 0.6%)
+6. **Different CKA paths (0.987 vs 0.03) reach similar val performance** — representation is not the bottleneck
+
+---
+
 ## Appendix B: exp2 Baseline Detailed Training Log
 
 | Step | text_loss | audio_loss | rho | cos_phi | backbone_disp | CKA_L12 | audio_rank |
