@@ -219,33 +219,26 @@ txt(s, 0.8, 0.3, 11.7, 0.6, "The Problem", size=28, bold=True, color=C_TITLE)
 line(s, 0.8, 0.85, 2, C_RED, 3)
 
 def plot_text_audio(buf, dpi):
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 3.5))
-    steps = [0, 500, 1000, 1500, 2000, 2500, 3000]
-    text_loss = [11.9, 5.8, 3.4, 1.8, 1.6, 1.7, 1.4]
-    audio_loss = [58, 52, 38, 31, 40, 37, 37]
+    # Use real data from exp13 (direct S3 10k, post_s1 start)
+    d13 = json.load(open('results/exp13_long_s3/diagnostics.json'))
+    steps = [d['step'] for d in d13]
+    text_loss = [d['text_loss'] for d in d13]
+    audio_loss = [d['audio_loss'] for d in d13]
 
-    ax1.plot(steps, text_loss, 'o-', color='#1e88e5', linewidth=2.5, markersize=6, label='Text Train Loss')
-    ax1.set_title('Text Train Loss: Rapid Convergence', fontsize=13, fontweight='bold')
-    ax1.set_xlabel('Steps', fontsize=11)
-    ax1.set_ylabel('Train Loss', fontsize=11)
-    ax1.set_ylim(0, 14)
-    ax1.axhline(y=1.44, color='#1e88e5', linestyle='--', alpha=0.5)
-    ax1.annotate('1.44 (-77%)', xy=(3000, 1.44), fontsize=10, color='#1e88e5')
-    ax1.grid(alpha=0.2)
-
-    ax2.plot(steps, audio_loss, 's-', color='#e53e3e', linewidth=2.5, markersize=6, label='Audio Train Loss')
-    ax2.set_title('Audio Train Loss: Plateau', fontsize=13, fontweight='bold')
-    ax2.set_xlabel('Steps', fontsize=11)
-    ax2.set_ylabel('Train Loss (sum of 7 CB)', fontsize=11)
-    ax2.set_ylim(0, 65)
-    ax2.axhline(y=37, color='#e53e3e', linestyle='--', alpha=0.5)
-    ax2.axhline(y=58, color='gray', linestyle=':', alpha=0.3)
-    ax2.annotate('37.25 (-14%)', xy=(2200, 38), fontsize=10, color='#e53e3e')
-    ax2.annotate('H_random=58', xy=(100, 59), fontsize=9, color='gray')
-    ax2.fill_between([500, 3000], 34, 42, alpha=0.1, color='red')
-    ax2.grid(alpha=0.2)
-
-    plt.tight_layout()
+    fig, ax = plt.subplots(figsize=(10, 3.8))
+    ax.plot(steps, text_loss, '-', color='#1e88e5', linewidth=2, alpha=0.8, label='Text train loss')
+    ax.plot(steps, audio_loss, '-', color='#e53e3e', linewidth=2, alpha=0.8, label='Audio train loss (sum 7 CB)')
+    ax.axhline(y=58, color='gray', linestyle=':', alpha=0.3)
+    ax.annotate('H_random = 58 (random guessing)', xy=(100, 59), fontsize=9, color='gray')
+    ax.axhline(y=37, color='#e53e3e', linestyle='--', alpha=0.3)
+    ax.annotate('plateau ~37', xy=(5000, 38), fontsize=9, color='#e53e3e')
+    ax.set_xlabel('S3 Training Steps (from post-S1, no S2)', fontsize=11)
+    ax.set_ylabel('Train Loss', fontsize=11)
+    ax.set_title('Direct S3 Training: Text vs Audio (exp13, 10k steps, eff=32)', fontsize=13, fontweight='bold')
+    ax.legend(fontsize=11, loc='upper right')
+    ax.set_ylim(0, 65)
+    ax.grid(alpha=0.2)
+    ax.fill_between(steps, 33, 42, alpha=0.06, color='red')
     fig.savefig(buf, format='png', dpi=dpi, bbox_inches='tight', facecolor='white')
     plt.close()
 
@@ -279,25 +272,60 @@ txt(s, 0.8, 0.3, 11.7, 0.6, "The Verdict: Plateau Breaks -- Slowly", size=28, bo
 line(s, 0.8, 0.85, 4, C_GREEN, 3)
 
 def plot_val_trajectory(buf, dpi):
-    fig, ax = plt.subplots(figsize=(10, 4))
-    steps16 = [2000, 4000, 6000, 8000, 10000, 14000, 18000, 22000, 26000, 30000]
-    val16 = [49.5, 47.2, 45.5, 43.9, 42.5, 40.3, 38.8, 37.8, 37.2, 36.8]
-    steps_ch = [1000, 3000, 5000, 7500, 10500, 13000, 16000]
-    val_ch = [50.2, 45.8, 41.8, 38.0, 34.9, 33.4, 32.3]
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
 
-    ax.plot(steps16, val16, 'o-', color='#1e88e5', linewidth=2, markersize=5,
-            label='S2->S3 eff=32 (exp16)')
-    ax.plot(steps_ch, val_ch, 's-', color='#e53e3e', linewidth=2, markersize=5,
-            label='S2->S3 eff=192 (chain)')
-    ax.axhline(y=49.1, color='gray', linestyle=':', alpha=0.4, label='Baseline (3k steps)')
-    ax.set_xlabel('S3 Training Steps', fontsize=12)
-    ax.set_ylabel('Val A1A2 Audio Loss', fontsize=12)
-    ax.set_title('Audio Validation Loss Decreases with More Training', fontsize=14, fontweight='bold')
-    ax.legend(fontsize=10)
-    ax.grid(alpha=0.2)
-    ax.annotate('49.1 (baseline)', xy=(500, 49.5), fontsize=9, color='gray')
-    ax.annotate('36.8 (-25%)', xy=(28000, 37.5), fontsize=10, color='#1e88e5', fontweight='bold')
-    ax.annotate('32.3 (-34%)', xy=(14500, 33), fontsize=10, color='#e53e3e', fontweight='bold')
+    # Left: Train loss (text + audio) for exp16 (S2->S3 30k)
+    d16 = json.load(open('results/exp16_long_s2s3/diagnostics.json'))
+    steps16 = [d['step'] for d in d16]
+    text16 = [d['text_loss'] for d in d16]
+    audio16 = [d['audio_loss'] for d in d16]
+
+    ax1.plot(steps16, text16, '-', color='#1e88e5', linewidth=1.5, alpha=0.7, label='Text train loss')
+    ax1.plot(steps16, audio16, '-', color='#e53e3e', linewidth=1.5, alpha=0.7, label='Audio train loss')
+    ax1.set_xlabel('S3 Steps (from S2 checkpoint)', fontsize=11)
+    ax1.set_ylabel('Train Loss', fontsize=11)
+    ax1.set_title('Train Loss: S2->S3, 30k steps (exp16)', fontsize=12, fontweight='bold')
+    ax1.legend(fontsize=9)
+    ax1.set_ylim(0, 55)
+    ax1.grid(alpha=0.2)
+    ax1.annotate('text ~1.5', xy=(25000, 3), fontsize=9, color='#1e88e5')
+    ax1.annotate('audio ~25', xy=(25000, 27), fontsize=9, color='#e53e3e')
+
+    # Right: Val A1A2 for exp16 + chain + exp13 (no S2)
+    val16_steps = [d['step'] for d in d16 if 'val_task_losses' in d and d['step'] % 2000 == 0]
+    val16 = [d['val_task_losses']['A1A2']['audio'] for d in d16 if 'val_task_losses' in d and d['step'] % 2000 == 0]
+
+    # Chain combined
+    steps_ch, val_ch = [], []
+    for name, offset in [('omni_s3_r1', 0), ('omni_s3_r2', 5500), ('omni_s3_r3', 11000)]:
+        try:
+            dc = json.load(open(f'results/{name}/diagnostics.json'))
+            for d in dc:
+                vt = d.get('val_task_losses', {})
+                if vt and 'A1A2' in vt and d['step'] % 1000 == 0:
+                    steps_ch.append(offset + d['step'])
+                    val_ch.append(vt['A1A2']['audio'])
+        except: pass
+
+    # exp13 (no S2)
+    d13 = json.load(open('results/exp13_long_s3/diagnostics.json'))
+    val13_steps = [d['step'] for d in d13 if 'val_task_losses' in d and d['step'] % 2000 == 0]
+    val13 = [d['val_task_losses']['A1A2']['audio'] for d in d13 if 'val_task_losses' in d and d['step'] % 2000 == 0]
+
+    ax2.plot(val16_steps, val16, 'o-', color='#1e88e5', linewidth=2, markersize=4, label='S2->S3 eff=32 (exp16)')
+    ax2.plot(steps_ch, val_ch, 's-', color='#e53e3e', linewidth=2, markersize=4, label='S2->S3 eff=192 (chain)')
+    ax2.plot(val13_steps, val13, '^-', color='#f57c00', linewidth=2, markersize=4, label='Direct S3 eff=32 (exp13)')
+    ax2.axhline(y=49.1, color='gray', linestyle=':', alpha=0.4)
+    ax2.set_xlabel('S3 Training Steps', fontsize=11)
+    ax2.set_ylabel('Val A1A2 Audio Loss', fontsize=11)
+    ax2.set_title('Val Audio Loss: Plateau Breaks with More Steps', fontsize=12, fontweight='bold')
+    ax2.legend(fontsize=9)
+    ax2.grid(alpha=0.2)
+    ax2.annotate('32.3', xy=(15000, 33.5), fontsize=10, color='#e53e3e', fontweight='bold')
+    ax2.annotate('36.8', xy=(28000, 37.8), fontsize=10, color='#1e88e5', fontweight='bold')
+    ax2.annotate('44.9', xy=(8500, 46), fontsize=10, color='#f57c00')
+
+    plt.tight_layout()
     fig.savefig(buf, format='png', dpi=dpi, bbox_inches='tight', facecolor='white')
     plt.close()
 
