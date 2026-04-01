@@ -156,7 +156,62 @@ txt(s, 1.5, 5.5, 10.3, 0.5,
     size=14, color=C_SUBTLE, align=PP_ALIGN.CENTER)
 
 # ============================================================
-# Slide 2: The Problem
+# Slide 2: Background — Mini-Omni
+# ============================================================
+s = slide()
+rect(s, 0, 0, W, 0.08, C_NAVY)
+txt(s, 0.8, 0.3, 11.7, 0.6, "Background: Mini-Omni Architecture & Training", size=28, bold=True, color=C_TITLE)
+line(s, 0.8, 0.85, 5, C_NAVY, 3)
+
+# Left: Architecture
+rect(s, 0.5, 1.1, 5.8, 3.5, C_LIGHT_BG, C_BORDER)
+multi(s, 0.8, 1.2, 5.3, 3.3, [
+    ("Architecture", {'size': 18, 'bold': True, 'color': C_NAVY}),
+    ("", {'size': 4}),
+    ("Qwen2-0.5B backbone (~500M params)", {'size': 14}),
+    ("+ Whisper encoder + learnable adapter", {'size': 14}),
+    ("+ SNAC 24kHz neural audio codec", {'size': 14}),
+    ("", {'size': 4}),
+    ("8 parallel streams per timestep:", {'size': 14, 'bold': True}),
+    ("  Streams 0-6: audio codebooks (4160 vocab each)", {'size': 13, 'color': C_SUBTLE}),
+    ("  Stream 7: text tokens (152K vocab)", {'size': 13, 'color': C_SUBTLE}),
+    ("", {'size': 4}),
+    ("Shared embedding: 181,120 rows", {'size': 14}),
+    ("  Text rows: pretrained (Qwen2)", {'size': 13, 'color': C_GREEN}),
+    ("  Audio rows: randomly initialized", {'size': 13, 'color': C_RED, 'bold': True}),
+    ("  tie_word_embeddings=True (lm_head = wte)", {'size': 13, 'color': C_SUBTLE}),
+])
+
+# Right: Three-stage training
+rect(s, 6.8, 1.1, 6.0, 3.5, C_LIGHT_BG, C_BORDER)
+multi(s, 7.1, 1.2, 5.5, 3.3, [
+    ("Three-Stage Training", {'size': 18, 'bold': True, 'color': C_NAVY}),
+    ("", {'size': 4}),
+    ("S1: Adapter Training", {'size': 15, 'bold': True, 'color': C_ACCENT}),
+    ("  Train Whisper adapter only; freeze LLM backbone", {'size': 13}),
+    ("  Goal: align audio encoder to LLM embedding space", {'size': 12, 'color': C_SUBTLE}),
+    ("", {'size': 4}),
+    ("S2: Text Adaptation", {'size': 15, 'bold': True, 'color': C_GREEN}),
+    ("  Train LLM backbone; freeze adapter", {'size': 13}),
+    ("  Text-only tasks (T1T2, A1T2). No audio output.", {'size': 12, 'color': C_SUBTLE}),
+    ("", {'size': 4}),
+    ("S3: Joint Training  <-- Our focus", {'size': 15, 'bold': True, 'color': C_RED}),
+    ("  Unfreeze everything. 4 task types:", {'size': 13}),
+    ("  T1T2 (text->text), T1A2 (text->audio)", {'size': 12, 'color': C_SUBTLE}),
+    ("  A1T2 (audio->text), A1A2 (audio->audio)", {'size': 12, 'color': C_SUBTLE}),
+])
+
+# Bottom: Our setup
+rect(s, 0.5, 4.9, 12.3, 1.5, RGBColor(0xe8, 0xea, 0xf6), C_NAVY)
+multi(s, 0.8, 5.0, 11.7, 1.3, [
+    ("Our Experimental Setup", {'size': 16, 'bold': True, 'color': C_NAVY}),
+    ("Starting point: post-S1 checkpoint (Qwen2 pretrained + trained adapter + random audio embeddings)", {'size': 13}),
+    ("Data: VoiceAssistant-400K (470K samples x 4 tasks = 1.88M sequences). Hardware: 1x A100 80GB (Narval).", {'size': 13, 'color': C_SUBTLE}),
+    ("We investigate S3 training: why does audio loss plateau while text converges?", {'size': 14, 'bold': True, 'color': C_RED}),
+])
+
+# ============================================================
+# Slide 3: The Problem
 # ============================================================
 s = slide()
 rect(s, 0, 0, W, 0.08, C_RED)
@@ -169,19 +224,19 @@ def plot_text_audio(buf, dpi):
     text_loss = [11.9, 5.8, 3.4, 1.8, 1.6, 1.7, 1.4]
     audio_loss = [58, 52, 38, 31, 40, 37, 37]
 
-    ax1.plot(steps, text_loss, 'o-', color='#1e88e5', linewidth=2.5, markersize=6, label='Text Loss')
-    ax1.set_title('Text: Rapid Convergence', fontsize=13, fontweight='bold')
+    ax1.plot(steps, text_loss, 'o-', color='#1e88e5', linewidth=2.5, markersize=6, label='Text Train Loss')
+    ax1.set_title('Text Train Loss: Rapid Convergence', fontsize=13, fontweight='bold')
     ax1.set_xlabel('Steps', fontsize=11)
-    ax1.set_ylabel('Loss', fontsize=11)
+    ax1.set_ylabel('Train Loss', fontsize=11)
     ax1.set_ylim(0, 14)
     ax1.axhline(y=1.44, color='#1e88e5', linestyle='--', alpha=0.5)
     ax1.annotate('1.44 (-77%)', xy=(3000, 1.44), fontsize=10, color='#1e88e5')
     ax1.grid(alpha=0.2)
 
-    ax2.plot(steps, audio_loss, 's-', color='#e53e3e', linewidth=2.5, markersize=6, label='Audio Loss')
-    ax2.set_title('Audio: Plateau', fontsize=13, fontweight='bold')
+    ax2.plot(steps, audio_loss, 's-', color='#e53e3e', linewidth=2.5, markersize=6, label='Audio Train Loss')
+    ax2.set_title('Audio Train Loss: Plateau', fontsize=13, fontweight='bold')
     ax2.set_xlabel('Steps', fontsize=11)
-    ax2.set_ylabel('Loss', fontsize=11)
+    ax2.set_ylabel('Train Loss (sum of 7 CB)', fontsize=11)
     ax2.set_ylim(0, 65)
     ax2.axhline(y=37, color='#e53e3e', linestyle='--', alpha=0.5)
     ax2.axhline(y=58, color='gray', linestyle=':', alpha=0.3)
@@ -199,7 +254,7 @@ s.shapes.add_picture(buf, Inches(0.8), Inches(1.2), Inches(7), Inches(3.5))
 
 rect(s, 8.2, 1.2, 4.5, 3.5, C_LIGHT_BG, C_BORDER)
 multi(s, 8.5, 1.4, 4, 3.2, [
-    ("At 3,000 steps:", {'size': 14, 'bold': True, 'color': C_SUBTLE}),
+    ("At 3,000 S3 steps (train loss):", {'size': 14, 'bold': True, 'color': C_SUBTLE}),
     ("Text loss:  9 -> 1.44  (-77%)", {'size': 16, 'color': C_ACCENT, 'bold': True}),
     ("Audio loss: 58 -> 37   (-14%)", {'size': 16, 'color': C_RED, 'bold': True}),
     ("", {'size': 8}),
@@ -376,7 +431,7 @@ multi(s, 10.1, 1.05, 2.9, 0.4, [
 ])
 
 cmp_data = [
-    ["Config", "eff", "Steps", "Val"],
+    ["Config", "eff", "Steps", "Val A1A2"],
     ["exp16", "32", "30k", "36.8"],
     ["exp15", "192", "5k", "44.6"],
     ["exp13", "32", "10k", "44.9"],
