@@ -882,42 +882,41 @@ rect(s, 0, 0, W, 0.08, C_GREEN)
 txt(s, 0.8, 0.3, 11.7, 0.6, "Ongoing & Next Steps", size=28, bold=True, color=C_TITLE)
 line(s, 0.8, 0.85, 3, C_GREEN, 3)
 
-rect(s, 0.5, 1.1, 5.8, 3.0, C_LIGHT_BG, C_BORDER)
-multi(s, 0.8, 1.2, 5.3, 2.8, [
-    ("Ongoing: Mini-Omni Chain", {'size': 18, 'bold': True, 'color': C_GREEN}),
-    ("", {'size': 6}),
-    ("R1-R3 complete (global 16,500 steps)", {'size': 14}),
-    ("R4-R6 queued -> 27,500 steps (2.9 epochs)", {'size': 14}),
-    ("eff=192, cosine LR over full schedule", {'size': 14}),
-    ("", {'size': 6}),
-    ("Audio trajectory:", {'size': 14, 'bold': True}),
-    ("  R1: 29.9 -> R2: 25.6 -> R3: 23.9", {'size': 14, 'font': 'Consolas', 'color': C_GREEN}),
-    ("  Val A1A2: 49 -> 35 -> 32", {'size': 14, 'font': 'Consolas', 'color': C_GREEN}),
-    ("  Still declining, no convergence yet", {'size': 13, 'color': C_SUBTLE}),
+rect(s, 0.5, 1.1, 6.0, 2.5, C_LIGHT_BG, C_BORDER)
+multi(s, 0.8, 1.2, 5.5, 2.3, [
+    ("Proposed: Embedding Warm-up", {'size': 18, 'bold': True, 'color': C_ORANGE}),
+    ("", {'size': 4}),
+    ("Phase 0: freeze backbone, train only audio embeddings", {'size': 14}),
+    ("  wte[152000:] = lm_head (tied) -> trains both I/O", {'size': 12, 'color': C_SUBTLE}),
+    ("  ~3k steps to give embeddings structure", {'size': 12, 'color': C_SUBTLE}),
+    ("Phase 1: unfreeze all, normal S3 training", {'size': 14}),
+    ("  Embeddings already structured -> GSNR should be higher", {'size': 12, 'color': C_SUBTLE}),
+    ("", {'size': 4}),
+    ("Motivation: GSNR=0.08 is an embedding property.", {'size': 13, 'bold': True, 'color': C_RED}),
+    ("Fix embedding first -> fix GSNR -> fix learning speed.", {'size': 13, 'color': C_TEXT}),
 ])
 
-rect(s, 6.8, 1.1, 6.0, 3.0, C_LIGHT_BG, C_BORDER)
-multi(s, 7.1, 1.2, 5.5, 2.8, [
-    ("Proposed Experiments", {'size': 18, 'bold': True, 'color': C_ORANGE}),
-    ("", {'size': 6}),
-    ("1. Optimal sampling (22% text, 78% audio)", {'size': 14}),
-    ("   B_crit theory predicts efficiency gain", {'size': 12, 'color': C_SUBTLE}),
+rect(s, 6.8, 1.1, 6.0, 2.5, C_LIGHT_BG, C_BORDER)
+multi(s, 7.1, 1.2, 5.5, 2.3, [
+    ("Proposed: Architecture Change", {'size': 18, 'bold': True, 'color': C_ACCENT}),
     ("", {'size': 4}),
-    ("2. LR scaling: eff=192 + LR x 7", {'size': 14}),
-    ("   Should match small-batch efficiency", {'size': 12, 'color': C_SUBTLE}),
+    ("Option A: Enable post_adapter (TTS adapter)", {'size': 14}),
+    ("  6 extra transformer layers + independent audio lm_head", {'size': 12, 'color': C_SUBTLE}),
+    ("  Audio output gradient decoupled from text embedding", {'size': 12, 'color': C_SUBTLE}),
     ("", {'size': 4}),
-    ("3. Measure GSNR_text directly", {'size': 14}),
-    ("   Currently estimated, need verification", {'size': 12, 'color': C_SUBTLE}),
+    ("Option B: Init from SNAC codebook vectors", {'size': 14}),
+    ("  SNAC already has meaningful codebook embeddings", {'size': 12, 'color': C_SUBTLE}),
+    ("  Project to 896-dim -> warm start for wte[152000:]", {'size': 12, 'color': C_SUBTLE}),
     ("", {'size': 4}),
-    ("4. 50k+ steps training", {'size': 14}),
-    ("   Audio still improving, push further", {'size': 12, 'color': C_SUBTLE}),
+    ("Both address the embedding bottleneck directly.", {'size': 13, 'bold': True, 'color': C_ACCENT}),
 ])
 
-rect(s, 0.5, 4.3, 12.3, 1.2, RGBColor(0xe8, 0xf5, 0xe9), C_GREEN)
-multi(s, 0.8, 4.4, 11.7, 1.0, [
-    ("Bottom Line", {'size': 18, 'bold': True, 'color': C_GREEN}),
-    ("The audio plateau is a noise-dominated learning regime (GSNR=0.08), not an optimization or architecture failure.", {'size': 15, 'color': C_NAVY}),
-    ("It breaks with sufficient training. The B_crit framework provides actionable guidance for compute-optimal training.", {'size': 14, 'color': C_TEXT}),
+rect(s, 0.5, 3.8, 12.3, 1.5, RGBColor(0xe8, 0xf5, 0xe9), C_GREEN)
+multi(s, 0.8, 3.9, 11.7, 1.3, [
+    ("Summary", {'size': 18, 'bold': True, 'color': C_GREEN}),
+    ("Audio plateau = noise-dominated learning (GSNR=0.08) caused by random audio embedding init.", {'size': 15, 'color': C_NAVY}),
+    ("Backbone is NOT the bottleneck (CKA 0.03 vs 0.99 -> same val). Embedding is.", {'size': 14, 'color': C_TEXT}),
+    ("Breaks with enough steps, but GSNR-guided strategies (embedding warm-up, TTS adapter) could accelerate.", {'size': 14, 'color': C_TEXT}),
 ])
 
 # References
