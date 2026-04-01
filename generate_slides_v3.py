@@ -407,19 +407,17 @@ rect(s, 0, 0, W, 0.08, C_ACCENT)
 txt(s, 0.8, 0.3, 11.7, 0.6, "Finding 2: GSNR (Gradient Signal-to-Noise Ratio) Theory", size=28, bold=True, color=C_TITLE)
 line(s, 0.8, 0.85, 4, C_ACCENT, 3)
 
-# Left: Math formulas
+# Left top: Math formulas
 def plot_math_merged(buf, dpi):
     plt.rcParams['text.usetex'] = True
     plt.rcParams['text.latex.preamble'] = r'\usepackage{amsmath}\usepackage{amssymb}'
-    fig, ax = plt.subplots(figsize=(7.5, 3.5))
+    fig, ax = plt.subplots(figsize=(7, 2.5))
     ax.axis('off')
 
     equations = [
-        (0.02, 0.88, r'$\displaystyle \mathrm{GSNR}(B) = \frac{\lVert\mathbb{E}[\mathbf{g}]\rVert^2}{\mathrm{tr}(\Sigma)/B} = \frac{B \cdot \lVert G\rVert^2}{\mathrm{tr}(\Sigma)}$', 14),
-        (0.02, 0.68, r'$\displaystyle B_{\mathrm{crit}} = \frac{\mathrm{tr}(\Sigma)}{\lVert G\rVert^2}$ \quad (noise $=$ signal threshold)', 14),
-        (0.02, 0.46, r'Measured: $\mathrm{GSNR}_{\mathrm{audio}}(B{=}2) = 0.08$', 13),
-        (0.15, 0.30, r'$\Rightarrow\; B_{\mathrm{crit}}^{\mathrm{audio}} \approx 25,\quad B_{\mathrm{crit}}^{\mathrm{text}} \approx 2$', 13),
-        (0.02, 0.10, r'Optimal: $B^* = B_{\mathrm{crit}}^T + \sqrt{B_{\mathrm{crit}}^T \cdot B_{\mathrm{crit}}^A} \approx 9$', 14),
+        (0.02, 0.85, r'$\displaystyle \mathrm{GSNR}(B) = \frac{B \cdot \lVert G\rVert^2}{\mathrm{tr}(\Sigma)}, \quad B_{\mathrm{crit}} = \frac{\mathrm{tr}(\Sigma)}{\lVert G\rVert^2}$', 14),
+        (0.02, 0.50, r'Total compute: $C(B) = S_{\min} \times (B + B_{\mathrm{crit}})$', 14),
+        (0.02, 0.15, r'$\frac{dC}{dB} = S_{\min} > 0 \;\Rightarrow\; C$ \textbf{always increases with} $B$', 14),
     ]
 
     for x, y, eq, fs in equations:
@@ -429,57 +427,72 @@ def plot_math_merged(buf, dpi):
     plt.close()
     plt.rcParams['text.usetex'] = False
 
-buf = make_chart(plot_math_merged, 7.5, 3.5)
-s.shapes.add_picture(buf, Inches(0.3), Inches(1.0), Inches(6), Inches(2.8))
+buf = make_chart(plot_math_merged, 7, 2.5)
+s.shapes.add_picture(buf, Inches(0.3), Inches(1.0), Inches(5.8), Inches(2.0))
 
-# Right: efficiency table
-rect(s, 6.5, 1.0, 3.2, 3.0, C_LIGHT_BG, C_BORDER)
-multi(s, 6.7, 1.05, 2.8, 0.4, [
-    ("Sample Efficiency", {'size': 13, 'bold': True, 'color': C_NAVY}),
+# Left bottom: C(B) curve to visually resolve the "contradiction"
+def plot_cb_curve(buf, dpi):
+    fig, ax = plt.subplots(figsize=(5.5, 2.8))
+    B = np.arange(2, 200, 1)
+    B_crit = 25
+    C = B + B_crit  # proportional to S_min
+    ax.plot(B, C, '-', color='#1e88e5', linewidth=2.5)
+    ax.axvline(x=9, color='#2e7d32', linestyle='-', alpha=0.8, linewidth=2, label='B*=9 (optimal)')
+    ax.axvline(x=25, color='#e53e3e', linestyle='--', alpha=0.6, linewidth=2, label='B_crit=25 (GSNR=1)')
+    ax.axvline(x=32, color='#f57c00', linestyle=':', alpha=0.6, linewidth=2, label='eff=32 (ours)')
+    ax.axvline(x=192, color='#7b1fa2', linestyle=':', alpha=0.6, linewidth=2, label='eff=192 (ours)')
+    # Mark points
+    ax.plot(9, 9+25, 'o', color='#2e7d32', markersize=10, zorder=5)
+    ax.plot(25, 25+25, 's', color='#e53e3e', markersize=8, zorder=5)
+    ax.plot(32, 32+25, '^', color='#f57c00', markersize=8, zorder=5)
+    ax.annotate('C=34\n(optimal)', xy=(9, 34), xytext=(15, 20), fontsize=9,
+                arrowprops=dict(arrowstyle='->', color='#2e7d32'), color='#2e7d32', fontweight='bold')
+    ax.annotate('C=50', xy=(25, 50), xytext=(35, 42), fontsize=9,
+                arrowprops=dict(arrowstyle='->', color='#e53e3e'), color='#e53e3e')
+    ax.annotate('C=57', xy=(32, 57), xytext=(45, 52), fontsize=9, color='#f57c00')
+    ax.set_xlabel('Batch Size (B)', fontsize=11)
+    ax.set_ylabel('Total Compute C (samples)', fontsize=11)
+    ax.set_title('C(B) = S_min x (B + B_crit):  always increasing!', fontsize=12, fontweight='bold')
+    ax.legend(fontsize=8, loc='lower right')
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, 130)
+    ax.grid(alpha=0.2)
+    fig.savefig(buf, format='png', dpi=dpi, bbox_inches='tight', facecolor='white')
+    plt.close()
+
+buf = make_chart(plot_cb_curve, 5.5, 2.8)
+s.shapes.add_picture(buf, Inches(0.3), Inches(3.2), Inches(5.8), Inches(2.8))
+
+# Right: explanation + table
+rect(s, 6.5, 1.0, 6.3, 2.0, C_LIGHT_BG, C_BORDER)
+multi(s, 6.8, 1.1, 5.8, 1.8, [
+    ("Why more noisy steps beats fewer clean steps", {'size': 14, 'bold': True, 'color': C_NAVY}),
+    ("", {'size': 4}),
+    ("McCandlish et al. 2018: total compute C(B) = S_min x (B + B_crit)", {'size': 12, 'color': C_SUBTLE}),
+    ("C always increases with B. Smaller B = fewer total samples needed.", {'size': 12}),
+    ("", {'size': 4}),
+    ("B_crit is NOT the optimal — it's just where GSNR=1 per step.", {'size': 13, 'bold': True, 'color': C_RED}),
+    ("Below B_crit: each step is noisy, but you get MORE steps per sample.", {'size': 12}),
+    ("Noise averages out over N steps (sqrt(N)), signal accumulates (N).", {'size': 12}),
 ])
 
-eff_data = [
-    ["B_eff", "GSNR", "Eff."],
-    ["2", "0.08", "93%"],
-    ["9 (B*)", "0.36", "100%"],
-    ["25 (Bcrit)", "1.00", "76%"],
-    ["32 (ours)", "1.28", "70%"],
-    ["192 (ours)", "7.68", "19%"],
-]
-tbl(s, 6.7, 1.55, 2.8, 2.2, eff_data)
-
-multi(s, 6.7, 3.8, 2.8, 0.5, [
-    ("eff=192 wastes 81%", {'size': 11, 'bold': True, 'color': C_RED}),
-    ("of compute vs B*=9", {'size': 10, 'color': C_SUBTLE}),
-])
-
-# Right: controlled comparison table
-rect(s, 9.9, 1.0, 3.2, 3.0, C_LIGHT_BG, C_BORDER)
-multi(s, 10.1, 1.05, 2.9, 0.4, [
-    ("Controlled Comparison", {'size': 13, 'bold': True, 'color': C_NAVY}),
+# Right bottom: comparison table
+rect(s, 6.5, 3.2, 6.3, 2.8, C_LIGHT_BG, C_BORDER)
+multi(s, 6.8, 3.25, 5.8, 0.4, [
+    ("Verified experimentally (same 960k total samples):", {'size': 13, 'bold': True, 'color': C_NAVY}),
 ])
 
 cmp_data = [
-    ["Config", "eff", "Steps", "Val A1A2"],
-    ["exp16", "32", "30k", "36.8"],
-    ["exp15", "192", "5k", "44.6"],
-    ["exp13", "32", "10k", "44.9"],
-    ["exp17", "192", "5k", "43.9"],
-    ["Chain", "192", "16.5k", "32.3"],
+    ["Config", "eff", "Steps", "GSNR/step", "Val A1A2"],
+    ["exp16 (small batch)", "32", "30k", "0.64", "36.8"],
+    ["exp15 (large batch)", "192", "5k", "3.84", "44.6"],
+    ["exp17 (large, no S2)", "192", "5k", "3.84", "43.9"],
 ]
-tbl(s, 10.1, 1.55, 2.9, 2.2, cmp_data)
+tbl(s, 6.8, 3.75, 5.8, 1.5, cmp_data)
 
-multi(s, 10.1, 3.8, 2.9, 0.5, [
-    ("Same samples, more steps", {'size': 11, 'bold': True, 'color': C_GREEN}),
-    ("-> always wins", {'size': 10, 'color': C_SUBTLE}),
-])
-
-# Bottom insight
-rect(s, 0.5, 4.5, 12.3, 1.5, RGBColor(0xe3, 0xf2, 0xfd), C_ACCENT)
-multi(s, 0.8, 4.6, 11.7, 1.3, [
-    ("Key: Optimal B is NOT at B_crit (critical batch size). More noisy steps beats fewer clean steps.", {'size': 15, 'bold': True, 'color': C_NAVY}),
-    ("exp16 (eff=32, 30k) vs exp15 (eff=192, 5k): same 960k samples, 36.8 vs 44.6 -> 2.8x fewer samples needed.", {'size': 13, 'color': C_TEXT}),
-    ("S2 doesn't help val: exp12 (S2->S3) = 44.8 vs exp13 (no S2) = 44.9. S2 smooths landscape only.", {'size': 13, 'color': C_TEXT}),
+multi(s, 6.8, 5.3, 5.8, 0.5, [
+    ("Small batch: 2.8x fewer samples for same val.", {'size': 12, 'bold': True, 'color': C_GREEN}),
+    ("Theory predicts 3.8x — consistent.", {'size': 11, 'color': C_SUBTLE}),
 ])
 
 # ============================================================
