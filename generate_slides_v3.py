@@ -264,7 +264,77 @@ txt(s, 0.8, 5.2, 11.7, 1.0,
     size=18, bold=True, color=C_NAVY, align=PP_ALIGN.CENTER)
 
 # ============================================================
-# Slide 3: The Verdict
+# Slide 3b: Train Loss is Misleading — Real Learning Indicators
+# ============================================================
+s = slide()
+rect(s, 0, 0, W, 0.08, C_ORANGE)
+txt(s, 0.8, 0.3, 11.7, 0.6, "But Train Loss is Misleading — The Model IS Learning", size=28, bold=True, color=C_TITLE)
+line(s, 0.8, 0.85, 5, C_ORANGE, 3)
+
+def plot_real_learning(buf, dpi):
+    d13 = json.load(open('results/exp13_long_s3/diagnostics.json'))
+
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(14, 3.5))
+
+    # Left: train audio loss (flat/noisy) vs val A1A2 (decreasing)
+    steps = [d['step'] for d in d13]
+    train_audio = [d['audio_loss'] for d in d13]
+    val_steps = [d['step'] for d in d13 if 'val_task_losses' in d]
+    val_a1a2 = [d['val_task_losses']['A1A2']['audio'] for d in d13 if 'val_task_losses' in d]
+
+    ax1.plot(steps, train_audio, '-', color='#e53e3e', linewidth=1.5, alpha=0.5, label='Train audio (noisy)')
+    ax1.plot(val_steps, val_a1a2, 'o-', color='#1e88e5', linewidth=2, markersize=4, label='Val A1A2 (real)')
+    ax1.set_xlabel('Steps', fontsize=10)
+    ax1.set_ylabel('Loss', fontsize=10)
+    ax1.set_title('Train Loss Flat, Val Decreasing!', fontsize=11, fontweight='bold')
+    ax1.legend(fontsize=8)
+    ax1.grid(alpha=0.2)
+    ax1.annotate('train ~37 (flat)', xy=(6000, 38), fontsize=9, color='#e53e3e')
+    ax1.annotate('val 50->45', xy=(7000, 44), fontsize=9, color='#1e88e5', fontweight='bold')
+
+    # Middle: CB0 top-10 accuracy
+    topk_steps = [d['step'] for d in d13 if 'audio_topk' in d]
+    topk_vals = [d['audio_topk']['cb0_top10'] * 100 for d in d13 if 'audio_topk' in d]
+
+    ax2.plot(topk_steps, topk_vals, 's-', color='#2e7d32', linewidth=2, markersize=4)
+    ax2.set_xlabel('Steps', fontsize=10)
+    ax2.set_ylabel('CB0 Top-10 Accuracy (%)', fontsize=10)
+    ax2.set_title('Audio Prediction Improving', fontsize=11, fontweight='bold')
+    ax2.grid(alpha=0.2)
+    ax2.annotate('16% -> 30%', xy=(5000, 27), fontsize=10, color='#2e7d32', fontweight='bold')
+
+    # Right: Probe train acc (backbone encoding audio)
+    d16 = json.load(open('results/exp16_long_s2s3/diagnostics.json'))
+    probe_steps = [d['step'] for d in d16 if 'linear_probe' in d and d['step'] % 5000 == 0]
+    probe_train = [d['linear_probe']['layer12']['train_acc'] * 100 for d in d16 if 'linear_probe' in d and d['step'] % 5000 == 0]
+    probe_val = [d['linear_probe']['layer12']['val_acc'] * 100 for d in d16 if 'linear_probe' in d and d['step'] % 5000 == 0]
+
+    ax3.plot(probe_steps, probe_train, 'o-', color='#7b1fa2', linewidth=2, markersize=5, label='Probe train acc')
+    ax3.plot(probe_steps, probe_val, 's-', color='#f57c00', linewidth=2, markersize=5, label='Probe val acc')
+    ax3.set_xlabel('Steps (exp16, S2->S3)', fontsize=10)
+    ax3.set_ylabel('Linear Probe Accuracy (%)', fontsize=10)
+    ax3.set_title('Backbone Encoding Audio Info', fontsize=11, fontweight='bold')
+    ax3.legend(fontsize=8)
+    ax3.grid(alpha=0.2)
+    ax3.annotate('train 57%\n(memorized)', xy=(25000, 50), fontsize=9, color='#7b1fa2')
+    ax3.annotate('val 6%\n(not generalized)', xy=(20000, 10), fontsize=9, color='#f57c00')
+
+    plt.tight_layout()
+    fig.savefig(buf, format='png', dpi=dpi, bbox_inches='tight', facecolor='white')
+    plt.close()
+
+buf = make_chart(plot_real_learning, 14, 3.5)
+s.shapes.add_picture(buf, Inches(0.2), Inches(1.0), Inches(12.9), Inches(3.8))
+
+rect(s, 0.5, 5.1, 12.3, 1.5, RGBColor(0xff, 0xf3, 0xe0), C_ORANGE)
+multi(s, 0.8, 5.2, 11.7, 1.3, [
+    ("Train audio loss is too noisy (GSNR=0.08) to show progress. Use these instead:", {'size': 15, 'bold': True, 'color': C_NAVY}),
+    ("Val A1A2: 50->45 (real capability).   CB0 Top-10: 16%->30% (prediction improving).", {'size': 14, 'color': C_TEXT}),
+    ("Probe train 57% but val 6%: backbone encodes audio info but doesn't generalize yet (chicken-and-egg).", {'size': 13, 'color': C_SUBTLE}),
+])
+
+# ============================================================
+# Slide 4: The Verdict
 # ============================================================
 s = slide()
 rect(s, 0, 0, W, 0.08, C_GREEN)
