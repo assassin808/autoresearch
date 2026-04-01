@@ -291,39 +291,36 @@ def plot_val_trajectory(buf, dpi):
     ax1.annotate('text ~1.5', xy=(25000, 3), fontsize=9, color='#1e88e5')
     ax1.annotate('audio ~25', xy=(25000, 27), fontsize=9, color='#e53e3e')
 
-    # Right: Val A1A2 for exp16 + chain + exp13 (no S2)
-    val16_steps = [d['step'] for d in d16 if 'val_task_losses' in d and d['step'] % 2000 == 0]
+    # Right: Val A1A2 vs TOTAL SAMPLES (fair comparison across batch sizes)
+    val16_samples = [d['step'] * 32 / 1000 for d in d16 if 'val_task_losses' in d and d['step'] % 2000 == 0]
     val16 = [d['val_task_losses']['A1A2']['audio'] for d in d16 if 'val_task_losses' in d and d['step'] % 2000 == 0]
 
-    # Chain combined
-    steps_ch, val_ch = [], []
+    # Chain combined (eff=192)
+    samples_ch, val_ch = [], []
     for name, offset in [('omni_s3_r1', 0), ('omni_s3_r2', 5500), ('omni_s3_r3', 11000)]:
         try:
             dc = json.load(open(f'results/{name}/diagnostics.json'))
             for d in dc:
                 vt = d.get('val_task_losses', {})
                 if vt and 'A1A2' in vt and d['step'] % 1000 == 0:
-                    steps_ch.append(offset + d['step'])
+                    samples_ch.append((offset + d['step']) * 192 / 1000)
                     val_ch.append(vt['A1A2']['audio'])
         except: pass
 
-    # exp13 (no S2)
+    # exp13 (no S2, eff=32)
     d13 = json.load(open('results/exp13_long_s3/diagnostics.json'))
-    val13_steps = [d['step'] for d in d13 if 'val_task_losses' in d and d['step'] % 2000 == 0]
+    val13_samples = [d['step'] * 32 / 1000 for d in d13 if 'val_task_losses' in d and d['step'] % 2000 == 0]
     val13 = [d['val_task_losses']['A1A2']['audio'] for d in d13 if 'val_task_losses' in d and d['step'] % 2000 == 0]
 
-    ax2.plot(val16_steps, val16, 'o-', color='#1e88e5', linewidth=2, markersize=4, label='S2->S3 eff=32 (exp16)')
-    ax2.plot(steps_ch, val_ch, 's-', color='#e53e3e', linewidth=2, markersize=4, label='S2->S3 eff=192 (chain)')
-    ax2.plot(val13_steps, val13, '^-', color='#f57c00', linewidth=2, markersize=4, label='Direct S3 eff=32 (exp13)')
+    ax2.plot(val16_samples, val16, 'o-', color='#1e88e5', linewidth=2, markersize=4, label='S2->S3 eff=32 (exp16)')
+    ax2.plot(samples_ch, val_ch, 's-', color='#e53e3e', linewidth=2, markersize=4, label='S2->S3 eff=192 (chain)')
+    ax2.plot(val13_samples, val13, '^-', color='#f57c00', linewidth=2, markersize=4, label='Direct S3 eff=32 (exp13)')
     ax2.axhline(y=49.1, color='gray', linestyle=':', alpha=0.4)
-    ax2.set_xlabel('S3 Training Steps', fontsize=11)
+    ax2.set_xlabel('Total Samples Seen (x1000)', fontsize=11)
     ax2.set_ylabel('Val A1A2 Audio Loss', fontsize=11)
-    ax2.set_title('Val Audio Loss: Plateau Breaks with More Steps', fontsize=12, fontweight='bold')
+    ax2.set_title('Val Audio Loss vs Total Samples (fair comparison)', fontsize=12, fontweight='bold')
     ax2.legend(fontsize=9)
     ax2.grid(alpha=0.2)
-    ax2.annotate('32.3', xy=(15000, 33.5), fontsize=10, color='#e53e3e', fontweight='bold')
-    ax2.annotate('36.8', xy=(28000, 37.8), fontsize=10, color='#1e88e5', fontweight='bold')
-    ax2.annotate('44.9', xy=(8500, 46), fontsize=10, color='#f57c00')
 
     plt.tight_layout()
     fig.savefig(buf, format='png', dpi=dpi, bbox_inches='tight', facecolor='white')
