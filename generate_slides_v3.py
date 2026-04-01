@@ -170,7 +170,7 @@ multi(s, 0.8, 1.2, 5.3, 3.3, [
     ("", {'size': 4}),
     ("Qwen2-0.5B backbone (~500M params)", {'size': 14}),
     ("+ Whisper encoder + learnable adapter", {'size': 14}),
-    ("+ SNAC 24kHz neural audio codec", {'size': 14}),
+    ("+ SNAC (multi-scale neural audio codec) 24kHz", {'size': 14}),
     ("", {'size': 4}),
     ("8 parallel streams per timestep:", {'size': 14, 'bold': True}),
     ("  Streams 0-6: audio codebooks (4160 vocab each)", {'size': 13, 'color': C_SUBTLE}),
@@ -258,9 +258,10 @@ multi(s, 8.5, 1.4, 4, 3.2, [
     ("Text loss:  9 -> 1.44  (-77%)", {'size': 16, 'color': C_ACCENT, 'bold': True}),
     ("Audio loss: 58 -> 37   (-14%)", {'size': 16, 'color': C_RED, 'bold': True}),
     ("", {'size': 8}),
+    ("GSNR (Gradient Signal-to-Noise Ratio):", {'size': 13, 'color': C_SUBTLE}),
     ("Audio GSNR = 0.08", {'size': 18, 'bold': True, 'color': C_RED}),
     ("Signal is 12.5x weaker than noise", {'size': 13, 'color': C_SUBTLE}),
-    ("", {'size': 8}),
+    ("", {'size': 6}),
     ("cos(grad_text, grad_audio) = 0", {'size': 18, 'bold': True, 'color': C_PURPLE}),
     ("Not conflicting -- orthogonal", {'size': 13, 'color': C_SUBTLE}),
 ])
@@ -375,7 +376,7 @@ multi(s, 0.8, 4.9, 11.7, 1.0, [
 # ============================================================
 s = slide()
 rect(s, 0, 0, W, 0.08, C_ACCENT)
-txt(s, 0.8, 0.3, 11.7, 0.6, "Finding 2: GSNR Theory -- More Steps Wins", size=28, bold=True, color=C_TITLE)
+txt(s, 0.8, 0.3, 11.7, 0.6, "Finding 2: GSNR (Gradient Signal-to-Noise Ratio) Theory", size=28, bold=True, color=C_TITLE)
 line(s, 0.8, 0.85, 4, C_ACCENT, 3)
 
 # Left: Math formulas
@@ -448,7 +449,7 @@ multi(s, 10.1, 3.8, 2.9, 0.5, [
 # Bottom insight
 rect(s, 0.5, 4.5, 12.3, 1.5, RGBColor(0xe3, 0xf2, 0xfd), C_ACCENT)
 multi(s, 0.8, 4.6, 11.7, 1.3, [
-    ("Key: Optimal B is NOT at B_crit. More noisy steps beats fewer clean steps.", {'size': 15, 'bold': True, 'color': C_NAVY}),
+    ("Key: Optimal B is NOT at B_crit (critical batch size). More noisy steps beats fewer clean steps.", {'size': 15, 'bold': True, 'color': C_NAVY}),
     ("exp16 (eff=32, 30k) vs exp15 (eff=192, 5k): same 960k samples, 36.8 vs 44.6 -> 2.8x fewer samples needed.", {'size': 13, 'color': C_TEXT}),
     ("S2 doesn't help val: exp12 (S2->S3) = 44.8 vs exp13 (no S2) = 44.9. S2 smooths landscape only.", {'size': 13, 'color': C_TEXT}),
 ])
@@ -458,7 +459,7 @@ multi(s, 0.8, 4.6, 11.7, 1.3, [
 # ============================================================
 s = slide()
 rect(s, 0, 0, W, 0.08, C_ORANGE)
-txt(s, 0.8, 0.3, 11.7, 0.6, "Finding 3: Two Paths, Same Destination", size=28, bold=True, color=C_TITLE)
+txt(s, 0.8, 0.3, 11.7, 0.6, "Finding 3: CKA (Centered Kernel Alignment) — Two Paths, Same Destination", size=26, bold=True, color=C_TITLE)
 line(s, 0.8, 0.85, 3, C_ORANGE, 3)
 
 def plot_cka(buf, dpi):
@@ -486,7 +487,8 @@ s.shapes.add_picture(buf, Inches(0.3), Inches(1.1), Inches(6), Inches(3.5))
 
 rect(s, 6.7, 1.1, 6.2, 3.5, C_LIGHT_BG, C_BORDER)
 multi(s, 7.0, 1.3, 5.6, 3.2, [
-    ("Same val performance, opposite CKA:", {'size': 15, 'bold': True, 'color': C_NAVY}),
+    ("CKA: measures representation similarity to init", {'size': 12, 'color': C_SUBTLE}),
+    ("Same val, opposite CKA:", {'size': 15, 'bold': True, 'color': C_NAVY}),
     ("", {'size': 6}),
     ("Direct S3:  CKA=0.03  Val A1A2=44.9", {'size': 15, 'color': C_RED, 'font': 'Consolas'}),
     ("  -> Backbone completely reshaped", {'size': 13, 'color': C_SUBTLE}),
@@ -583,7 +585,7 @@ multi(s, 0.8, 5.6, 11.7, 0.8, [
 # ============================================================
 s = slide()
 rect(s, 0, 0, W, 0.08, C_RED)
-txt(s, 0.8, 0.3, 11.7, 0.6, "Finding 5: Gradient Dynamics (rho + GSNR)", size=28, bold=True, color=C_TITLE)
+txt(s, 0.8, 0.3, 11.7, 0.6, "Finding 5: Gradient Dynamics", size=28, bold=True, color=C_TITLE)
 line(s, 0.8, 0.85, 4, C_RED, 3)
 
 # Left chart: rho over steps
@@ -602,8 +604,8 @@ def plot_rho(buf, dpi):
     ax.plot(steps_smooth, rho_smooth, '-', color='#e53e3e', linewidth=2.5, label='rho (smoothed)')
     ax.axhline(y=1.0, color='gray', linestyle='--', alpha=0.4, label='rho=1 (balanced)')
     ax.set_xlabel('Steps', fontsize=11)
-    ax.set_ylabel('rho (audio/text grad norm)', fontsize=11)
-    ax.set_title('D1: Gradient Norm Ratio', fontsize=12, fontweight='bold')
+    ax.set_ylabel(r'$\rho$ = ||grad_audio|| / ||grad_text||', fontsize=11)
+    ax.set_title(r'$\rho$: Gradient Magnitude Ratio', fontsize=12, fontweight='bold')
     ax.legend(fontsize=9)
     ax.grid(alpha=0.2)
     ax.annotate('~0.6', xy=(500, 0.6), fontsize=10, color='#e53e3e', fontweight='bold')
@@ -745,8 +747,8 @@ insights = [
     ("2", "GSNR is Root Cause", "Audio GSNR=0.08 -> 12x more samples needed. More steps >> larger batch.", C_RED),
     ("3", "Plateau Breaks with Steps", "Val A1A2: 49->32 over 16.5k steps. Audio IS learning, slowly.", C_GREEN),
     ("4", "Basin Width Diverges", "S2->S3 starts flat (40) and widens 4x. Direct S3 starts sharp (336) and narrows.", C_ACCENT),
-    ("5", "Backbone is NOT Bottleneck", "CKA=0.03 vs 0.99 -> same val. Bottleneck is embedding GSNR.", C_ORANGE),
-    ("6", "rho up, GSNR flat", "Audio grad magnitude grows 4x but direction stays noisy. Can't fix with LR.", C_NAVY),
+    ("5", "Backbone is NOT Bottleneck", "CKA (repr. similarity) 0.03 vs 0.99 -> same val. Bottleneck is embedding.", C_ORANGE),
+    ("6", "Magnitude up, Direction flat", "Grad norm ratio grows 4x but GSNR (signal/noise) stays 0.08. Can't fix with LR.", C_NAVY),
 ]
 
 y = 1.2
