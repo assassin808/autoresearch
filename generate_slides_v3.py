@@ -471,95 +471,102 @@ multi(s, 0.8, 4.9, 11.7, 1.0, [
 # ============================================================
 s = slide()
 rect(s, 0, 0, W, 0.08, C_ACCENT)
-txt(s, 0.8, 0.3, 11.7, 0.6, "Finding 2: GSNR (Gradient Signal-to-Noise Ratio) Theory", size=28, bold=True, color=C_TITLE)
+txt(s, 0.8, 0.3, 11.7, 0.6, "Finding 2: Audio GSNR — Why 12x Slower", size=28, bold=True, color=C_TITLE)
 line(s, 0.8, 0.85, 4, C_ACCENT, 3)
 
-# Left top: Math formulas
-def plot_math_merged(buf, dpi):
+# Left: GSNR definition + measurement
+def plot_gsnr_math(buf, dpi):
     plt.rcParams['text.usetex'] = True
     plt.rcParams['text.latex.preamble'] = r'\usepackage{amsmath}\usepackage{amssymb}'
-    fig, ax = plt.subplots(figsize=(7, 2.5))
+    fig, ax = plt.subplots(figsize=(6, 3.2))
     ax.axis('off')
 
-    equations = [
-        (0.02, 0.85, r'$\displaystyle \mathrm{GSNR}(B) = \frac{B \cdot \lVert G\rVert^2}{\mathrm{tr}(\Sigma)}, \quad B_{\mathrm{crit}} = \frac{\mathrm{tr}(\Sigma)}{\lVert G\rVert^2}$', 14),
-        (0.02, 0.50, r'Total compute: $C(B) = S_{\min} \times (B + B_{\mathrm{crit}})$', 14),
-        (0.02, 0.15, r'$\frac{dC}{dB} = S_{\min} > 0 \;\Rightarrow\; C$ \textbf{always increases with} $B$', 14),
+    lines = [
+        (0.02, 0.92, r'\textbf{GSNR} (Gradient Signal-to-Noise Ratio):', 13),
+        (0.02, 0.78, r'$\displaystyle \mathrm{GSNR} = \frac{\lVert \mathbb{E}[\mathbf{g}] \rVert^2}{\mathrm{Var}(\mathbf{g})} = \frac{\mathrm{signal}^2}{\mathrm{noise}}$', 16),
+        (0.02, 0.55, r'Measured (D14, K=16 batch accumulation):', 12),
+        (0.05, 0.40, r'$\mathrm{GSNR}_{\mathrm{audio}} = 0.08 \quad \Rightarrow$ noise is $12.5\times$ signal', 14),
+        (0.05, 0.22, r'$\mathrm{GSNR}_{\mathrm{text}} \approx 1.0 \quad \Rightarrow$ signal $\approx$ noise', 14),
+        (0.02, 0.05, r'$\Rightarrow$ Audio needs $\sim 12\times$ more steps than text', 14),
     ]
 
-    for x, y, eq, fs in equations:
+    for x, y, eq, fs in lines:
         ax.text(x, y, eq, fontsize=fs, transform=ax.transAxes, verticalalignment='center')
 
     fig.savefig(buf, format='png', dpi=dpi, bbox_inches='tight', facecolor='white', edgecolor='none')
     plt.close()
     plt.rcParams['text.usetex'] = False
 
-buf = make_chart(plot_math_merged, 7, 2.5)
-s.shapes.add_picture(buf, Inches(0.3), Inches(1.0), Inches(5.8), Inches(2.0))
+buf = make_chart(plot_gsnr_math, 6, 3.2)
+s.shapes.add_picture(buf, Inches(0.3), Inches(1.0), Inches(5.5), Inches(2.8))
 
-# Left bottom: C(B) curve to visually resolve the "contradiction"
-def plot_cb_curve(buf, dpi):
-    fig, ax = plt.subplots(figsize=(5.5, 2.8))
-    B = np.arange(2, 200, 1)
-    B_crit = 25
-    C = B + B_crit  # proportional to S_min
-    ax.plot(B, C, '-', color='#1e88e5', linewidth=2.5)
-    ax.axvline(x=9, color='#2e7d32', linestyle='-', alpha=0.8, linewidth=2, label='B*=9 (optimal)')
-    ax.axvline(x=25, color='#e53e3e', linestyle='--', alpha=0.6, linewidth=2, label='B_crit=25 (GSNR=1)')
-    ax.axvline(x=32, color='#f57c00', linestyle=':', alpha=0.6, linewidth=2, label='eff=32 (ours)')
-    ax.axvline(x=192, color='#7b1fa2', linestyle=':', alpha=0.6, linewidth=2, label='eff=192 (ours)')
-    # Mark points
-    ax.plot(9, 9+25, 'o', color='#2e7d32', markersize=10, zorder=5)
-    ax.plot(25, 25+25, 's', color='#e53e3e', markersize=8, zorder=5)
-    ax.plot(32, 32+25, '^', color='#f57c00', markersize=8, zorder=5)
-    ax.annotate('C=34\n(optimal)', xy=(9, 34), xytext=(15, 20), fontsize=9,
-                arrowprops=dict(arrowstyle='->', color='#2e7d32'), color='#2e7d32', fontweight='bold')
-    ax.annotate('C=50', xy=(25, 50), xytext=(35, 42), fontsize=9,
-                arrowprops=dict(arrowstyle='->', color='#e53e3e'), color='#e53e3e')
-    ax.annotate('C=57', xy=(32, 57), xytext=(45, 52), fontsize=9, color='#f57c00')
-    ax.set_xlabel('Batch Size (B)', fontsize=11)
-    ax.set_ylabel('Total Compute C (samples)', fontsize=11)
-    ax.set_title('C(B) = S_min x (B + B_crit):  always increasing!', fontsize=12, fontweight='bold')
-    ax.legend(fontsize=8, loc='lower right')
-    ax.set_xlim(0, 100)
-    ax.set_ylim(0, 130)
-    ax.grid(alpha=0.2)
+# Left bottom: analogy
+rect(s, 0.3, 4.0, 5.5, 2.0, C_LIGHT_BG, C_BORDER)
+multi(s, 0.6, 4.1, 5.0, 1.8, [
+    ("Analogy: hearing a whisper in a noisy bar", {'size': 14, 'bold': True, 'color': C_NAVY}),
+    ("Text: friend speaks normally (GSNR=1) → hear clearly", {'size': 12}),
+    ("Audio: friend whispers (GSNR=0.08) → drowned by noise", {'size': 12}),
+    ("Solution: ask friend to repeat 12x, average in your head", {'size': 12, 'color': C_ACCENT}),
+    ("→ noise cancels out, whisper emerges. Same with SGD steps.", {'size': 12, 'color': C_ACCENT}),
+])
+
+# Right: GSNR evolution chart + cos accumulation
+def plot_gsnr_evidence(buf, dpi):
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7, 3))
+
+    # GSNR over training (chain R2+R3)
+    gsnr_steps, gsnr_vals = [], []
+    for name, offset in [('omni_s3_r2', 5500), ('omni_s3_r3', 11000)]:
+        try:
+            dc = json.load(open(f'results/{name}/diagnostics.json'))
+            for d in dc:
+                if 'gsnr' in d:
+                    gsnr_steps.append(offset + d['step'])
+                    gsnr_vals.append(d['gsnr']['gsnr_audio'])
+        except: pass
+
+    ax1.scatter(gsnr_steps, gsnr_vals, s=20, alpha=0.6, color='#e53e3e')
+    ax1.axhline(y=0.08, color='gray', linestyle='--', alpha=0.5)
+    ax1.axhline(y=1.0, color='#2e7d32', linestyle='--', alpha=0.3)
+    ax1.annotate('GSNR=1 (text level)', xy=(6000, 1.02), fontsize=8, color='#2e7d32')
+    ax1.annotate('mean~0.08', xy=(12000, 0.1), fontsize=10, color='#e53e3e', fontweight='bold')
+    ax1.set_xlabel('Global Step', fontsize=10)
+    ax1.set_ylabel('Audio GSNR', fontsize=10)
+    ax1.set_title('D14: GSNR stays flat at 0.08', fontsize=11, fontweight='bold')
+    ax1.set_ylim(-0.02, 0.25)
+    ax1.grid(alpha=0.2)
+
+    # Verification: text top-1 vs audio top-1 growth rate
+    d16 = json.load(open('results/exp16_long_s2s3/diagnostics.json'))
+    steps = [d['step'] for d in d16 if 'text_topk' in d and d['step'] % 2000 == 0]
+    text_t1 = [d['text_topk']['top1']*100 for d in d16 if 'text_topk' in d and d['step'] % 2000 == 0]
+    audio_t1 = [d['audio_topk']['cb0_top1']*100 for d in d16 if 'audio_topk' in d and d['step'] % 2000 == 0]
+
+    ax2.plot(steps, text_t1, 'o-', color='#1e88e5', linewidth=2, markersize=4, label='Text top-1')
+    ax2.plot(steps, audio_t1, 's-', color='#e53e3e', linewidth=2, markersize=4, label='Audio CB0 top-1')
+    ax2.set_xlabel('Steps', fontsize=10)
+    ax2.set_ylabel('Top-1 Accuracy (%)', fontsize=10)
+    ax2.set_title('Text vs Audio learning rate', fontsize=11, fontweight='bold')
+    ax2.legend(fontsize=9)
+    ax2.grid(alpha=0.2)
+    ax2.annotate('~55%', xy=(25000, 56), fontsize=9, color='#1e88e5', fontweight='bold')
+    ax2.annotate('~15%', xy=(25000, 16), fontsize=9, color='#e53e3e', fontweight='bold')
+    ax2.annotate('~4x gap\n(GSNR predicts 12x)', xy=(15000, 35), fontsize=9, color='gray', ha='center')
+
+    plt.tight_layout()
     fig.savefig(buf, format='png', dpi=dpi, bbox_inches='tight', facecolor='white')
     plt.close()
 
-buf = make_chart(plot_cb_curve, 5.5, 2.8)
-s.shapes.add_picture(buf, Inches(0.3), Inches(3.2), Inches(5.8), Inches(2.8))
+buf = make_chart(plot_gsnr_evidence, 7, 3)
+s.shapes.add_picture(buf, Inches(6.0), Inches(1.0), Inches(7), Inches(3.0))
 
-# Right: explanation + table
-rect(s, 6.5, 1.0, 6.3, 2.0, C_LIGHT_BG, C_BORDER)
-multi(s, 6.8, 1.1, 5.8, 1.8, [
-    ("Why more noisy steps beats fewer clean steps", {'size': 14, 'bold': True, 'color': C_NAVY}),
-    ("", {'size': 4}),
-    ("McCandlish et al. 2018: total compute C(B) = S_min x (B + B_crit)", {'size': 12, 'color': C_SUBTLE}),
-    ("C always increases with B. Smaller B = fewer total samples needed.", {'size': 12}),
-    ("", {'size': 4}),
-    ("B_crit is NOT the optimal — it's just where GSNR=1 per step.", {'size': 13, 'bold': True, 'color': C_RED}),
-    ("Below B_crit: each step is noisy, but you get MORE steps per sample.", {'size': 12}),
-    ("Noise averages out over N steps (sqrt(N)), signal accumulates (N).", {'size': 12}),
-])
-
-# Right bottom: comparison table
-rect(s, 6.5, 3.2, 6.3, 2.8, C_LIGHT_BG, C_BORDER)
-multi(s, 6.8, 3.25, 5.8, 0.4, [
-    ("Verified experimentally (same 960k total samples):", {'size': 13, 'bold': True, 'color': C_NAVY}),
-])
-
-cmp_data = [
-    ["Config", "eff", "Steps", "GSNR/step", "Val A1A2"],
-    ["exp16 (small batch)", "32", "30k", "0.64", "36.8"],
-    ["exp15 (large batch)", "192", "5k", "3.84", "44.6"],
-    ["exp17 (large, no S2)", "192", "5k", "3.84", "43.9"],
-]
-tbl(s, 6.8, 3.75, 5.8, 1.5, cmp_data)
-
-multi(s, 6.8, 5.3, 5.8, 0.5, [
-    ("Small batch: 2.8x fewer samples for same val.", {'size': 12, 'bold': True, 'color': C_GREEN}),
-    ("Theory predicts 3.8x — consistent.", {'size': 11, 'color': C_SUBTLE}),
+# Right bottom
+rect(s, 6.0, 4.2, 7.0, 1.8, RGBColor(0xe3, 0xf2, 0xfd), C_ACCENT)
+multi(s, 6.3, 4.3, 6.5, 1.6, [
+    ("GSNR directly explains the plateau:", {'size': 15, 'bold': True, 'color': C_NAVY}),
+    ("Audio gradient = 8% signal + 92% noise → each step is mostly random walk", {'size': 13}),
+    ("But signal accumulates linearly (N), noise only as sqrt(N)", {'size': 13}),
+    ("→ After enough steps, signal emerges. Not stuck — just slow.", {'size': 13, 'bold': True, 'color': C_GREEN}),
 ])
 
 # ============================================================
